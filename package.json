@@ -12,7 +12,12 @@
     "typecheck": "tsc --noEmit -p packages/credit-worker/tsconfig.json"
   },
   "devDependencies": {
+    "solc": "^0.8.24",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0",
     "wrangler": "^4.14.0"
+  },
+  "dependencies": {
+    "viem": "^2.47.6"
   }
 }

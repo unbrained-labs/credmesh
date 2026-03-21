@@ -3,6 +3,10 @@ export interface Env {
   AGENT_NAME: string;
   CHAIN_RPC_URL?: string;
   IDENTITY_REGISTRY?: string;
+  REPUTATION_REGISTRY?: string;
+  CHAIN_ID?: string;
+  AGENT_PRIVATE_KEY?: string;
+  TEST_USDC?: string;
 }
 
 export interface AgentRegistrationInput {
@@ -52,6 +56,7 @@ export interface JobReceivable {
   createdAt: number;
   completedAt?: number;
   actualPayout?: number;
+  reputationTxHash?: string;
 }
 
 export interface CreditAdvance {
@@ -73,6 +78,8 @@ export interface CreditAdvance {
   spendPolicy?: SpendPolicy;
   totalSpent?: number;
   spendCount?: number;
+  transferTxHash?: string;
+  repaymentTxHash?: string;
 }
 
 export type CreditDecision = "APPROVED" | "MANUAL_REVIEW" | "DECLINED";

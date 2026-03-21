@@ -4,6 +4,7 @@ import { agentCard } from "./agent-card";
 import { CreditAgent } from "./engine";
 import { listScenarios } from "./demo";
 import { checkIdentityRegistration } from "./erc8004";
+import { isChainEnabled, getAgentWallet, getTreasuryBalance } from "./chain";
 import type { AgentRegistrationInput, Env, SpendCategory, TimelineEvent } from "./types";
 
 export { CreditAgent };
@@ -41,14 +42,24 @@ app.get("/cover.svg", (c) => {
   return c.body(COVER_SVG);
 });
 
-app.get("/health", (c) =>
-  c.json({
+app.get("/health", async (c) => {
+  const chainEnabled = isChainEnabled(c.env);
+  const wallet = getAgentWallet(c.env);
+  const onchainBalance = chainEnabled ? await getTreasuryBalance(c.env) : null;
+  return c.json({
     status: "ok",
     agent: c.env.AGENT_NAME || "TrustVault Credit",
-    version: "0.2.0",
+    version: "0.3.0",
     timestamp: Date.now(),
-  }),
-);
+    chain: {
+      enabled: chainEnabled,
+      network: chainEnabled ? "sepolia" : null,
+      wallet,
+      tokenAddress: c.env.TEST_USDC ?? null,
+      onchainBalance: onchainBalance ? `${onchainBalance} tUSDC` : null,
+    },
+  });
+});
 
 // ─── Agent Registration ───
 

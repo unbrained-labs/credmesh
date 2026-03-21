@@ -31,6 +31,7 @@ import type {
   TreasuryState,
   WaterfallResult,
 } from "./types";
+import { transferTokens, writeReputationAttestation, isChainEnabled } from "./chain";
 import { norm, rc } from "./utils";
 
 const DEFAULT_STATE: AgentState = {
@@ -191,11 +192,20 @@ export class CreditAgent extends DurableObject<Env> {
     this.state.advances[advance.id] = advance;
     this.state.treasury = reserveFunds(this.state.treasury, advance.approvedAmount);
 
+    // Transfer tokens on-chain if chain is configured
+    if (isChainEnabled(this.env)) {
+      const txResult = await transferTokens(this.env, input.agentAddress, advance.approvedAmount);
+      if (txResult) {
+        advance.transferTxHash = txResult.txHash;
+      }
+    }
+
     this.pushEvent("advance_created", norm(input.agentAddress), `Advance $${advance.approvedAmount.toFixed(2)} issued for "${input.purpose}".`, {
       advanceId: advance.id,
       amount: advance.approvedAmount,
       fee: advance.fee,
       jobId: job.id,
+      transferTxHash: advance.transferTxHash ?? null,
     });
 
     await this.persist();
@@ -423,8 +433,28 @@ export class CreditAgent extends DurableObject<Env> {
     );
     agent.updatedAt = Date.now();
 
+    // Write reputation attestation on-chain
+    if (isChainEnabled(this.env)) {
+      const hasDefault = activeAdvances.some((a) => a.status === "defaulted");
+      const score = hasDefault ? -1 : 1;
+      const attestType = hasDefault ? "partial_repayment" : "full_repayment";
+      const meta = JSON.stringify({
+        jobId: job.id,
+        payout: actualPayout,
+        waterfall: waterfall.status,
+        advances: activeAdvances.length,
+      });
+      const txHash = await writeReputationAttestation(
+        this.env, agent.address, attestType, score, meta,
+      );
+      if (txHash) {
+        job.reputationTxHash = txHash;
+      }
+    }
+
     this.pushEvent("job_completed", agent.address, `Job "${job.title}" completed. Payout: $${actualPayout.toFixed(2)}.`, {
       jobId: job.id, actualPayout, waterfallStatus: waterfall.status,
+      reputationTxHash: job.reputationTxHash ?? null,
     });
 
     await this.persist();
@@ -459,6 +489,12 @@ export class CreditAgent extends DurableObject<Env> {
     const job = this.state.jobs[advance.jobId];
     if (job && job.status === "open") {
       job.status = "defaulted";
+    }
+
+    // Write negative reputation on-chain
+    if (isChainEnabled(this.env)) {
+      const meta = JSON.stringify({ advanceId: advance.id, amount: advance.approvedAmount, reason: input.reason });
+      await writeReputationAttestation(this.env, agent.address, "default", -2, meta);
     }
 
     this.pushEvent("advance_defaulted", agent.address, `Advance $${advance.approvedAmount.toFixed(2)} defaulted: ${input.reason}`, {

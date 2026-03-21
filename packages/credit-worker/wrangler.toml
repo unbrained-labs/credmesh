@@ -14,8 +14,11 @@ new_classes = ["CreditAgent"]
 
 [vars]
 AGENT_NAME = "TrustVault Credit"
+CHAIN_RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com"
+IDENTITY_REGISTRY = "0xb5a8d645ff6c749f600a3ff31d71cdfad518737b"
+REPUTATION_REGISTRY = "0xfa20c33daa0bdf4d4b38c46952f2b2c95ace2ecf"
+CHAIN_ID = "11155111"
 
-# Optional secrets / vars
-# CHAIN_RPC_URL
-# IDENTITY_REGISTRY
-
+# Secrets (set via wrangler secret put):
+# AGENT_PRIVATE_KEY — wallet private key for signing txs
+# TEST_USDC — deployed TestUSDC token address (set after deploy)
