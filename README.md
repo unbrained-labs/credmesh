@@ -1,73 +1,171 @@
 # TrustVault Credit
 
-**Programmable working capital for autonomous agents**
+**Revenue-backed working capital for autonomous agents**
 
-TrustVault Credit underwrites short-term advances for agents that have won paid work but need funds before the payout arrives. It is built for agent marketplaces, not generic DeFi lending.
+TrustVault Credit turns agent reputation into short-term borrowing power.
 
-## Thesis
+An agent wins a `$100` job but needs `$15` now for inference, browser sessions, APIs, gas, or a specialist sub-agent. Human workers solve that with credit cards and invoice factoring. Agents have neither. TrustVault Credit underwrites the advance, constrains its use, and repays automatically from the job payout.
 
-Agents need to spend money before they make money.
+## Why Now
 
-They pay for:
+Agents can now win jobs, hire sub-agents, buy tools, and receive payouts. The next bottleneck is not discovery. It is working capital.
 
-- inference
-- browser automation
-- paid APIs
-- gas
-- specialist sub-agents
+As agent marketplaces emerge, the missing layer is underwriting:
 
-Human freelancers use credit cards and invoice factoring. Agents have neither. TrustVault Credit fills that gap with revenue-backed microcredit.
+- can this agent borrow?
+- how much?
+- for what purpose?
+- against which receivable?
+- what happens if the payout falls short?
 
-## What It Does
+## What We Built
 
-- registers an agent credit profile
-- simulates paid marketplace jobs
-- computes a credit score and credit limit
-- quotes a revenue-backed advance for a specific job
-- issues an advance with explicit constraints
-- sweeps repayment automatically when the job is completed
-- penalizes defaults immediately
+TrustVault Credit is the underwriting layer for agent marketplaces.
 
-## Why It Matters
+It:
 
-This is not "trust score for bots."
+- registers agent credit profiles
+- simulates paid marketplace jobs as receivables
+- computes credit scores and dynamic credit limits
+- quotes short-term advances against specific job payouts
+- applies task-aware constraints to the advance
+- repays automatically from job revenue
+- downgrades future borrowing power immediately on default
 
-It is the underwriting layer for agent marketplaces:
+## What This Is Not
 
-- agents can buy compute before they get paid
-- marketplaces can increase completion volume
-- lenders can fund agent work using bounded risk
-- sponsors like Aave can see a credible path to agent-native credit rails
+- not another trust registry
+- not a generic lending market
+- not long-duration unsecured credit
+- not a full DeFi lending pool in v1
 
-## MVP API
+This is a marketplace-native credit engine for autonomous workers.
 
-### `POST /agents/register`
+## Demo In One Line
 
-Seed or update an agent profile.
+`Agent wins a $100 job -> requests a $15 advance -> gets funded -> completes work -> payout repays the advance -> credit limit improves`
 
-### `POST /marketplace/jobs`
+## Why This Wins
 
-Create a receivable-backed job for an agent.
+- solves a real economic bottleneck for agent marketplaces
+- easy to demo end-to-end with visible economics
+- naturally expands into a larger network for agent credit, underwriting, and settlement
 
-### `POST /credit/profile`
+## Architecture
 
-Compute the agent's current credit profile.
+```text
+Marketplace
+  -> posts job receivable
+TrustVault Credit
+  -> underwrites the agent
+  -> approves constrained advance
+Agent
+  -> spends to execute the task
+Marketplace payout
+  -> repays advance first
+TrustVault Credit
+  -> updates credit profile, limits, and default history
+```
 
-### `POST /credit/quote`
+Current implementation:
 
-Quote a short-term advance against a specific job payout.
+- **Runtime:** Cloudflare Workers + Durable Objects
+- **Framework:** Hono
+- **State:** durable agent profiles, jobs, and advances
+- **Identity input:** optional ERC-8004 registration check
 
-### `POST /credit/advance`
+## Credit Lifecycle API
 
-Create the advance.
+### Agent onboarding
 
-### `POST /marketplace/jobs/:jobId/complete`
+- `POST /agents/register`
+- `GET /agents/:address`
+- `POST /credit/profile`
 
-Complete the job and sweep repayment.
+### Marketplace jobs
 
-### `POST /credit/default`
+- `POST /marketplace/jobs`
+- `POST /marketplace/jobs/:jobId/complete`
 
-Record a default event.
+### Underwriting
+
+- `POST /credit/quote`
+- `POST /credit/advance`
+
+### Settlement and failure
+
+- `POST /credit/default`
+- `GET /debug/state`
+
+## Example Flow
+
+### 1. Register the agent
+
+```bash
+curl -X POST http://127.0.0.1:8787/agents/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "address": "0xabc1230000000000000000000000000000000001",
+    "name": "BuildBot",
+    "trustScore": 78,
+    "attestationCount": 9,
+    "cooperationSuccessCount": 6,
+    "successfulJobs": 8,
+    "failedJobs": 1,
+    "averageCompletedPayout": 92
+  }'
+```
+
+### 2. Create a marketplace job
+
+```bash
+curl -X POST http://127.0.0.1:8787/marketplace/jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agentAddress": "0xabc1230000000000000000000000000000000001",
+    "payer": "AgentWork Network",
+    "title": "Landing page QA and fixes",
+    "expectedPayout": 100,
+    "durationHours": 12,
+    "category": "frontend"
+  }'
+```
+
+### 3. Request a quote
+
+```bash
+curl -X POST http://127.0.0.1:8787/credit/quote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agentAddress": "0xabc1230000000000000000000000000000000001",
+    "jobId": "JOB_ID_HERE",
+    "requestedAmount": 15,
+    "purpose": "compute"
+  }'
+```
+
+### 4. Create the advance
+
+```bash
+curl -X POST http://127.0.0.1:8787/credit/advance \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agentAddress": "0xabc1230000000000000000000000000000000001",
+    "jobId": "JOB_ID_HERE",
+    "requestedAmount": 15,
+    "purpose": "compute"
+  }'
+```
+
+### 5. Complete the job and sweep repayment
+
+```bash
+curl -X POST http://127.0.0.1:8787/marketplace/jobs/JOB_ID_HERE/complete \
+  -H "Content-Type: application/json" \
+  -d '{
+    "actualPayout": 100
+  }'
+```
 
 ## Quick Start
 
@@ -78,31 +176,54 @@ npm run dev
 
 The worker runs from `packages/credit-worker`.
 
-## Demo Flow
-
-1. Register an agent with prior trust and delivery history.
-2. Create a marketplace job with expected payout.
-3. Request a credit quote for execution costs.
-4. Approve an advance.
-5. Complete the job.
-6. Repay automatically from the payout.
-7. Observe the improved credit profile.
-
 ## Aave Fit
 
-This project is designed to map cleanly to a sponsor thesis around:
+This maps cleanly to an Aave-style sponsor thesis around:
 
-- undercollateralized lending
 - working capital
+- undercollateralized lending
 - credit delegation
 - stablecoin-denominated short-duration advances
 
-The strongest sponsor-facing framing is:
+The clean sponsor framing is:
 
-**Revenue-backed credit rails for autonomous workers.**
+**For Aave, this is a path from wallet-based lending to revenue-backed credit for autonomous workers.**
 
-## Repo Layout
+Future integration path:
 
-- `packages/credit-worker`: Cloudflare Worker + Durable Object
-- `docs/agent-credit-prd.md`: product requirements document
+- warehouse capital sourced from a stablecoin or GHO pool
+- advances denominated in stablecoins
+- repayment swept back into the capital source
+
+## Why It Matters For Agent Marketplaces
+
+- agents can accept larger or more complex jobs
+- marketplaces can increase completion rates
+- lead agents can hire specialist sub-agents before client payout
+- capital providers gain a visible, bounded underwriting surface
+
+## Current Repo Layout
+
+- `packages/credit-worker`: Cloudflare Worker + Durable Object MVP
+- `docs/agent-credit-prd.md`: product requirements
+- `docs/full-beast-roadmap.md`: prioritized roadmap to turn this into a full platform
+
+## Roadmap
+
+Near-term roadmap is in `docs/full-beast-roadmap.md`.
+
+Highest-priority additions:
+
+1. real marketplace loop with posting, bidding, award, and payout
+2. repayment waterfall and partial-shortfall handling
+3. programmable spend controls for advances
+4. lender-facing quote and risk report
+5. happy-path and failure-path demo scripts
+
+## Non-Goals For V1
+
+- permissionless lending pools
+- generalized long-duration credit
+- complex liquidation logic
+- fully onchain settlement for every step
 
