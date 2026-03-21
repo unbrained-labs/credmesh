@@ -6,6 +6,7 @@ import type {
   TreasuryState,
   WaterfallResult,
 } from "./types";
+import { rc } from "./utils";
 
 export const DEFAULT_TREASURY: TreasuryState = {
   totalDeposited: 0,
@@ -16,6 +17,9 @@ export const DEFAULT_TREASURY: TreasuryState = {
   availableFunds: 0,
   deposits: [],
 };
+
+const MAX_DEPOSITS = 200;
+const LATE_PENALTY_RATE = 0.05;
 
 export function depositFunds(
   treasury: TreasuryState,
@@ -31,12 +35,14 @@ export function depositFunds(
     createdAt: Date.now(),
   };
 
+  const deposits = [...treasury.deposits, deposit];
+
   return {
     treasury: {
       ...treasury,
       totalDeposited: rc(treasury.totalDeposited + deposit.amount),
       availableFunds: rc(treasury.availableFunds + deposit.amount),
-      deposits: [...treasury.deposits, deposit],
+      deposits: deposits.length > MAX_DEPOSITS ? deposits.slice(-MAX_DEPOSITS) : deposits,
     },
     deposit,
   };
@@ -76,8 +82,6 @@ export function recordDefaultLoss(
   };
 }
 
-const LATE_PENALTY_RATE = 0.05;
-
 export function settleWaterfall(
   grossPayout: number,
   advances: CreditAdvance[],
@@ -86,41 +90,27 @@ export function settleWaterfall(
   let remaining = rc(grossPayout);
   breakdown.push(`Gross payout received: $${grossPayout.toFixed(2)}`);
 
-  // 1. Principal
   const totalPrincipal = rc(advances.reduce((s, a) => s + a.approvedAmount, 0));
   const principalRepaid = rc(Math.min(remaining, totalPrincipal));
   remaining = rc(remaining - principalRepaid);
-  breakdown.push(
-    `Principal repaid: $${principalRepaid.toFixed(2)} of $${totalPrincipal.toFixed(2)}`,
-  );
+  breakdown.push(`Principal repaid: $${principalRepaid.toFixed(2)} of $${totalPrincipal.toFixed(2)}`);
 
-  // 2. Fees
   const totalFees = rc(advances.reduce((s, a) => s + a.fee, 0));
   const feePaid = rc(Math.min(remaining, totalFees));
   remaining = rc(remaining - feePaid);
-  breakdown.push(
-    `Fees paid: $${feePaid.toFixed(2)} of $${totalFees.toFixed(2)}`,
-  );
+  breakdown.push(`Fees paid: $${feePaid.toFixed(2)} of $${totalFees.toFixed(2)}`);
 
-  // 3. Late penalty
   const now = Date.now();
-  const overdueAdvances = advances.filter(
-    (a) => a.status === "active" && a.dueAt < now,
-  );
+  const overdueAdvances = advances.filter((a) => a.status === "active" && a.dueAt < now);
   let penaltyApplied = 0;
   if (overdueAdvances.length > 0) {
-    const penaltyBase = rc(
-      overdueAdvances.reduce((s, a) => s + a.approvedAmount, 0),
-    );
+    const penaltyBase = rc(overdueAdvances.reduce((s, a) => s + a.approvedAmount, 0));
     const penalty = rc(penaltyBase * LATE_PENALTY_RATE);
     penaltyApplied = rc(Math.min(remaining, penalty));
     remaining = rc(remaining - penaltyApplied);
-    breakdown.push(
-      `Late penalty (${overdueAdvances.length} overdue): $${penaltyApplied.toFixed(2)}`,
-    );
+    breakdown.push(`Late penalty (${overdueAdvances.length} overdue): $${penaltyApplied.toFixed(2)}`);
   }
 
-  // 4. Agent remainder
   const agentNet = rc(remaining);
   breakdown.push(`Agent net: $${agentNet.toFixed(2)}`);
 
@@ -211,8 +201,4 @@ export function validateSpend(
     };
   }
   return { approved: true };
-}
-
-function rc(v: number): number {
-  return Math.round(v * 100) / 100;
 }

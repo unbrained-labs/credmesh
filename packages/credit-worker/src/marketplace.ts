@@ -1,12 +1,9 @@
 import type { Bid, JobReceivable } from "./types";
 
 /**
- * Rank bids by composite score:
- * - Credit score: 40%
- * - Cost efficiency (lower cost = better): 30%
- * - Speed (fewer hours = better): 30%
+ * Rank bids by composite: credit score (40%), cost efficiency (30%), speed (30%).
  */
-export function rankBids(bids: Bid[], job: JobReceivable): Bid[] {
+export function rankBids(bids: Bid[]): Bid[] {
   if (bids.length === 0) return [];
 
   const maxCost = Math.max(...bids.map((b) => b.proposedCost), 1);
@@ -38,10 +35,7 @@ export function evaluateBid(
   if (bid.proposedCost > job.expectedPayout) {
     reasons.push("Proposed cost exceeds expected payout.");
   }
-  if (
-    job.requiredCapabilities &&
-    job.requiredCapabilities.length > 0
-  ) {
+  if (job.requiredCapabilities && job.requiredCapabilities.length > 0) {
     const missing = job.requiredCapabilities.filter(
       (cap) => !bid.capabilities.includes(cap),
     );
@@ -53,10 +47,7 @@ export function evaluateBid(
   return { eligible: reasons.length === 0, reasons };
 }
 
-export function awardJob(
-  job: JobReceivable,
-  bid: Bid,
-): JobReceivable {
+export function awardJob(job: JobReceivable, bid: Bid): JobReceivable {
   return {
     ...job,
     agentAddress: bid.agentAddress,

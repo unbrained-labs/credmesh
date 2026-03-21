@@ -1,12 +1,13 @@
 import type { AgentRecord, CreditDecision, CreditProfile, CreditQuote, JobReceivable } from "./types";
+import { clamp, rc, repaymentRate as calcRepaymentRate, roundTo } from "./utils";
 
 const HARD_CAP = 100;
 const PAYOUT_ADVANCE_RATIO = 0.3;
 
 export function computeCreditProfile(agent: AgentRecord): CreditProfile {
-  const repaymentRate = getRepaymentRate(agent);
+  const repayRate = calcRepaymentRate(agent.repaidAdvances, agent.defaultedAdvances);
   const completionRate = getCompletionRate(agent);
-  const reasons = buildReasons(agent, repaymentRate, completionRate);
+  const reasons = buildReasons(agent, repayRate, completionRate);
 
   let score = 0;
   score += agent.trustScore * 0.35;
@@ -22,18 +23,18 @@ export function computeCreditProfile(agent: AgentRecord): CreditProfile {
   score -= Math.min(agent.outstandingBalance, 100) * 0.2;
 
   const creditScore = clamp(Math.round(score), 0, 100);
-  const rawLimit = creditScore * 0.8 + repaymentRate * 20 + completionRate * 15;
-  const creditLimit = roundCurrency(clamp(rawLimit, 0, HARD_CAP));
-  const availableCredit = roundCurrency(Math.max(0, creditLimit - agent.outstandingBalance));
+  const rawLimit = creditScore * 0.8 + repayRate * 20 + completionRate * 15;
+  const creditLimit = rc(clamp(rawLimit, 0, HARD_CAP));
+  const availableCredit = rc(Math.max(0, creditLimit - agent.outstandingBalance));
 
   return {
     agent,
     creditScore,
     creditLimit,
     availableCredit,
-    repaymentRate,
+    repaymentRate: repayRate,
     completionRate,
-    outstandingBalance: roundCurrency(agent.outstandingBalance),
+    outstandingBalance: rc(agent.outstandingBalance),
     reasons,
   };
 }
@@ -50,15 +51,16 @@ export function quoteAdvance(
     "Advance is scoped to the declared task and duration.",
   ];
 
-  if (purpose.toLowerCase() === "compute" || purpose.toLowerCase() === "tools") {
+  const p = purpose.toLowerCase();
+  if (p.includes("compute") || p.includes("tool") || p.includes("browser")) {
     constraints.push("Use restricted to approved tool and compute vendors.");
   }
 
-  const payoutCap = roundCurrency(job.expectedPayout * PAYOUT_ADVANCE_RATIO);
-  const approvedAmount = roundCurrency(Math.min(requestedAmount, payoutCap, profile.availableCredit, HARD_CAP));
+  const payoutCap = rc(job.expectedPayout * PAYOUT_ADVANCE_RATIO);
+  const approvedAmount = rc(Math.min(requestedAmount, payoutCap, profile.availableCredit, HARD_CAP));
   const utilizationRatio = job.expectedPayout <= 0 ? 1 : approvedAmount / job.expectedPayout;
   const baseFeeRate = 0.05 + (1 - profile.repaymentRate) * 0.05 + (1 - profile.completionRate) * 0.03;
-  const fee = roundCurrency(approvedAmount * baseFeeRate);
+  const fee = rc(approvedAmount * baseFeeRate);
 
   let decision: CreditDecision = "DECLINED";
   if (profile.creditScore >= 65 && approvedAmount >= requestedAmount && requestedAmount > 0) {
@@ -107,7 +109,7 @@ export function quoteAdvance(
   };
 }
 
-function buildReasons(agent: AgentRecord, repaymentRate: number, completionRate: number): string[] {
+function buildReasons(agent: AgentRecord, repayRate: number, completionRate: number): string[] {
   const reasons: string[] = [];
 
   if (agent.identityRegistered) {
@@ -118,7 +120,7 @@ function buildReasons(agent: AgentRecord, repaymentRate: number, completionRate:
 
   reasons.push(`Trust score input is ${agent.trustScore}.`);
   reasons.push(`${agent.successfulJobs} successful jobs recorded.`);
-  reasons.push(`Repayment rate is ${(repaymentRate * 100).toFixed(0)}%.`);
+  reasons.push(`Repayment rate is ${(repayRate * 100).toFixed(0)}%.`);
   reasons.push(`Completion rate is ${(completionRate * 100).toFixed(0)}%.`);
 
   if (agent.defaultedAdvances > 0) {
@@ -128,28 +130,8 @@ function buildReasons(agent: AgentRecord, repaymentRate: number, completionRate:
   return reasons;
 }
 
-function getRepaymentRate(agent: AgentRecord): number {
-  const totalCompletedAdvances = agent.repaidAdvances + agent.defaultedAdvances;
-  if (totalCompletedAdvances === 0) return 1;
-  return roundTo(agent.repaidAdvances / totalCompletedAdvances, 2);
-}
-
 function getCompletionRate(agent: AgentRecord): number {
   const totalJobs = agent.successfulJobs + agent.failedJobs;
   if (totalJobs === 0) return 0.5;
   return roundTo(agent.successfulJobs / totalJobs, 2);
 }
-
-function roundCurrency(value: number): number {
-  return roundTo(value, 2);
-}
-
-function roundTo(value: number, places: number): number {
-  const factor = 10 ** places;
-  return Math.round(value * factor) / factor;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
