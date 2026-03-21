@@ -4,7 +4,7 @@ import { agentCard } from "./agent-card";
 import { CreditAgent } from "./engine";
 import { listScenarios } from "./demo";
 import { checkIdentityRegistration } from "./erc8004";
-import type { AgentRegistrationInput, Env, SpendCategory } from "./types";
+import type { AgentRegistrationInput, Env, SpendCategory, TimelineEvent } from "./types";
 
 export { CreditAgent };
 
@@ -15,6 +15,31 @@ app.use("*", cors());
 // ─── Discovery ───
 
 app.get("/.well-known/agent.json", (c) => c.json(agentCard(c.env)));
+
+app.get("/agent.json", (c) => c.json(devSpotManifest()));
+
+app.get("/agent_log.json", async (c) => {
+  const agent = getAgent(c.env);
+  const timeline: TimelineEvent[] = await agent.getTimeline(100);
+  return c.json({
+    agent: "TrustVault Credit",
+    version: "0.2.0",
+    generated: new Date().toISOString(),
+    entries: timeline.map((e) => ({
+      timestamp: new Date(e.timestamp).toISOString(),
+      type: e.type,
+      actor: e.actor,
+      action: e.description,
+      data: e.data,
+    })),
+  });
+});
+
+app.get("/cover.svg", (c) => {
+  c.header("Content-Type", "image/svg+xml");
+  c.header("Cache-Control", "public, max-age=86400");
+  return c.body(COVER_SVG);
+});
 
 app.get("/health", (c) =>
   c.json({
@@ -223,5 +248,107 @@ function getAgent(env: Env): DurableObjectStub<CreditAgent> {
   const id = env.CREDIT_AGENT.idFromName("trustvault-credit-singleton");
   return env.CREDIT_AGENT.get(id) as DurableObjectStub<CreditAgent>;
 }
+
+function devSpotManifest() {
+  return {
+    name: "TrustVault Credit",
+    description: "Programmable working capital for autonomous agents. Revenue-backed microcredit underwritten from onchain identity, delivery history, and marketplace receivables.",
+    operator_wallet: "0xa3D3E3859C7EE7EEA5d682A4BaC19c45aDB82388",
+    erc8004_identity: {
+      registry: "0xb5a8d645ff6c749f600a3ff31d71cdfad518737b",
+      chain: "sepolia",
+      chain_id: 11155111,
+    },
+    supported_tools: [
+      "credit-underwriting",
+      "marketplace-bidding",
+      "repayment-waterfall",
+      "spend-controls",
+      "treasury-management",
+      "risk-dashboard",
+    ],
+    task_categories: [
+      "agent-credit-underwriting",
+      "marketplace-receivable-financing",
+      "programmable-spend-controls",
+      "portfolio-risk-analysis",
+    ],
+    compute_constraints: {
+      runtime: "cloudflare-workers",
+      storage: "durable-objects",
+      max_request_duration_ms: 30000,
+    },
+    endpoints: {
+      health: "/health",
+      agent_card: "/.well-known/agent.json",
+      agent_log: "/agent_log.json",
+      dashboard: "https://trustvault-dashboard.pages.dev",
+    },
+    version: "0.2.0",
+  };
+}
+
+const COVER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" fill="none">
+  <rect width="1200" height="630" fill="#050505"/>
+  <rect x="40" y="40" width="1120" height="550" fill="none" stroke="#1a1a1a" stroke-width="1"/>
+  <rect x="60" y="60" width="1080" height="510" fill="none" stroke="#333" stroke-width="1"/>
+
+  <!-- Grid lines -->
+  <line x1="60" y1="200" x2="1140" y2="200" stroke="#1a1a1a" stroke-width="1"/>
+  <line x1="60" y1="340" x2="1140" y2="340" stroke="#1a1a1a" stroke-width="1"/>
+  <line x1="400" y1="60" x2="400" y2="570" stroke="#1a1a1a" stroke-width="1"/>
+  <line x1="800" y1="60" x2="800" y2="570" stroke="#1a1a1a" stroke-width="1"/>
+
+  <!-- Title block -->
+  <rect x="80" y="80" width="12" height="12" fill="#00ff41"/>
+  <text x="104" y="92" font-family="monospace" font-size="11" fill="#666" letter-spacing="3">TRUSTVAULT</text>
+  <text x="80" y="150" font-family="monospace" font-size="56" fill="#fff" font-weight="bold" letter-spacing="-2">CREDIT</text>
+  <text x="80" y="185" font-family="monospace" font-size="16" fill="#666" letter-spacing="1">programmable working capital for autonomous agents</text>
+
+  <!-- Credit flow diagram -->
+  <rect x="80" y="230" width="140" height="50" fill="none" stroke="#00ff41" stroke-width="1"/>
+  <text x="100" y="260" font-family="monospace" font-size="11" fill="#00ff41">AGENT</text>
+  <line x1="220" y1="255" x2="300" y2="255" stroke="#333" stroke-width="1" stroke-dasharray="4"/>
+  <text x="232" y="248" font-family="monospace" font-size="9" fill="#666">request</text>
+
+  <rect x="300" y="230" width="140" height="50" fill="none" stroke="#536dfe" stroke-width="1"/>
+  <text x="310" y="260" font-family="monospace" font-size="11" fill="#536dfe">CREDIT ENGINE</text>
+  <line x1="440" y1="255" x2="520" y2="255" stroke="#333" stroke-width="1" stroke-dasharray="4"/>
+  <text x="450" y="248" font-family="monospace" font-size="9" fill="#666">advance</text>
+
+  <rect x="520" y="230" width="140" height="50" fill="none" stroke="#ff9100" stroke-width="1"/>
+  <text x="540" y="260" font-family="monospace" font-size="11" fill="#ff9100">TREASURY</text>
+  <line x1="660" y1="255" x2="740" y2="255" stroke="#333" stroke-width="1" stroke-dasharray="4"/>
+  <text x="672" y="248" font-family="monospace" font-size="9" fill="#666">repay</text>
+
+  <rect x="740" y="230" width="140" height="50" fill="none" stroke="#00ff41" stroke-width="1"/>
+  <text x="760" y="260" font-family="monospace" font-size="11" fill="#00ff41">MARKETPLACE</text>
+
+  <!-- Stats block -->
+  <text x="80" y="365" font-family="monospace" font-size="9" fill="#666" letter-spacing="2">CAPABILITIES</text>
+  <text x="80" y="395" font-family="monospace" font-size="13" fill="#e0e0e0">&#x25A0; credit scoring + underwriting</text>
+  <text x="80" y="418" font-family="monospace" font-size="13" fill="#e0e0e0">&#x25A0; marketplace bidding + award</text>
+  <text x="80" y="441" font-family="monospace" font-size="13" fill="#e0e0e0">&#x25A0; repayment waterfall settlement</text>
+  <text x="80" y="464" font-family="monospace" font-size="13" fill="#e0e0e0">&#x25A0; programmable spend controls</text>
+  <text x="80" y="487" font-family="monospace" font-size="13" fill="#e0e0e0">&#x25A0; portfolio risk dashboard</text>
+  <text x="80" y="510" font-family="monospace" font-size="13" fill="#e0e0e0">&#x25A0; ERC-8004 identity verification</text>
+
+  <!-- Right side stats -->
+  <text x="820" y="365" font-family="monospace" font-size="9" fill="#666" letter-spacing="2">STACK</text>
+  <text x="820" y="395" font-family="monospace" font-size="13" fill="#666">runtime</text>
+  <text x="1000" y="395" font-family="monospace" font-size="13" fill="#e0e0e0">cloudflare workers</text>
+  <text x="820" y="418" font-family="monospace" font-size="13" fill="#666">state</text>
+  <text x="1000" y="418" font-family="monospace" font-size="13" fill="#e0e0e0">durable objects</text>
+  <text x="820" y="441" font-family="monospace" font-size="13" fill="#666">chain</text>
+  <text x="1000" y="441" font-family="monospace" font-size="13" fill="#e0e0e0">sepolia (ERC-8004)</text>
+  <text x="820" y="464" font-family="monospace" font-size="13" fill="#666">router</text>
+  <text x="1000" y="464" font-family="monospace" font-size="13" fill="#e0e0e0">hono</text>
+  <text x="820" y="487" font-family="monospace" font-size="13" fill="#666">lang</text>
+  <text x="1000" y="487" font-family="monospace" font-size="13" fill="#e0e0e0">typescript</text>
+
+  <!-- Footer -->
+  <text x="80" y="555" font-family="monospace" font-size="10" fill="#ff1744" font-weight="bold">unbrained.club</text>
+  <text x="1000" y="555" font-family="monospace" font-size="10" fill="#666">synthesis 2026</text>
+</svg>`;
 
 export default app;
