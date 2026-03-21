@@ -1,20 +1,46 @@
 import { DurableObject } from "cloudflare:workers";
 import { computeCreditProfile, quoteAdvance } from "./credit";
+import { createEvent, computePortfolio, computeRisk, generateHappyPath, generateFailurePath } from "./demo";
+import { rankBids, evaluateBid, awardJob } from "./marketplace";
+import {
+  DEFAULT_TREASURY,
+  depositFunds,
+  reserveFunds,
+  returnFunds,
+  recordDefaultLoss,
+  settleWaterfall,
+  buildSpendPolicy,
+  validateSpend,
+} from "./treasury";
 import type {
   AgentRecord,
   AgentRegistrationInput,
   AgentState,
+  Bid,
   CreditAdvance,
   CreditProfile,
   CreditQuote,
+  DemoScenario,
   Env,
   JobReceivable,
+  PortfolioReport,
+  RiskReport,
+  SpendCategory,
+  SpendRecord,
+  TimelineEvent,
+  TreasuryDeposit,
+  TreasuryState,
+  WaterfallResult,
 } from "./types";
 
 const DEFAULT_STATE: AgentState = {
   agents: {},
   jobs: {},
   advances: {},
+  bids: {},
+  treasury: { ...DEFAULT_TREASURY },
+  spendRecords: {},
+  timeline: [],
 };
 
 export class CreditAgent extends DurableObject<Env> {
@@ -23,7 +49,13 @@ export class CreditAgent extends DurableObject<Env> {
 
   private async init(): Promise<void> {
     if (this.initialized) return;
-    this.state = (await this.ctx.storage.get<AgentState>("state")) ?? structuredClone(DEFAULT_STATE);
+    const stored = await this.ctx.storage.get<AgentState>("state");
+    this.state = stored ?? structuredClone(DEFAULT_STATE);
+    // Back-fill fields added after initial deploy
+    if (!this.state.bids) this.state.bids = {};
+    if (!this.state.treasury) this.state.treasury = { ...DEFAULT_TREASURY };
+    if (!this.state.spendRecords) this.state.spendRecords = {};
+    if (!this.state.timeline) this.state.timeline = [];
     this.initialized = true;
   }
 
@@ -31,11 +63,28 @@ export class CreditAgent extends DurableObject<Env> {
     await this.ctx.storage.put("state", this.state);
   }
 
-  async registerAgent(input: AgentRegistrationInput & { identityRegistered: boolean }): Promise<AgentRecord> {
+  private pushEvent(
+    type: TimelineEvent["type"],
+    actor: string,
+    description: string,
+    data: Record<string, unknown> = {},
+  ): void {
+    this.state.timeline.push(createEvent(type, actor, description, data));
+    // Cap timeline at 500 entries
+    if (this.state.timeline.length > 500) {
+      this.state.timeline = this.state.timeline.slice(-500);
+    }
+  }
+
+  // ─── Agent Registration ───
+
+  async registerAgent(
+    input: AgentRegistrationInput & { identityRegistered: boolean },
+  ): Promise<AgentRecord> {
     await this.init();
 
     const now = Date.now();
-    const address = normalizeAddress(input.address);
+    const address = norm(input.address);
     const existing = this.state.agents[address];
     const agent: AgentRecord = {
       address,
@@ -58,52 +107,28 @@ export class CreditAgent extends DurableObject<Env> {
     };
 
     this.state.agents[address] = agent;
+    this.pushEvent("agent_registered", address, `Agent "${agent.name}" registered.`, { name: agent.name });
     await this.persist();
     return agent;
   }
 
   async getAgent(address: string): Promise<AgentRecord | null> {
     await this.init();
-    return this.state.agents[normalizeAddress(address)] ?? null;
+    return this.state.agents[norm(address)] ?? null;
   }
+
+  // ─── Credit ───
 
   async getProfile(address: string): Promise<CreditProfile> {
     await this.init();
     const agent = this.requireAgent(address);
-    return computeCreditProfile(agent);
-  }
-
-  async createJob(input: {
-    agentAddress: string;
-    payer: string;
-    title: string;
-    expectedPayout: number;
-    durationHours: number;
-    category: string;
-  }): Promise<JobReceivable> {
-    await this.init();
-    this.requireAgent(input.agentAddress);
-
-    const job: JobReceivable = {
-      id: crypto.randomUUID(),
-      agentAddress: normalizeAddress(input.agentAddress),
-      payer: input.payer,
-      title: input.title,
-      expectedPayout: roundCurrency(input.expectedPayout),
-      durationHours: input.durationHours,
-      category: input.category,
-      status: "open",
-      createdAt: Date.now(),
-    };
-
-    this.state.jobs[job.id] = job;
+    const profile = computeCreditProfile(agent);
+    this.pushEvent("credit_check", norm(address), `Credit check: score ${profile.creditScore}.`, {
+      creditScore: profile.creditScore,
+      creditLimit: profile.creditLimit,
+    });
     await this.persist();
-    return job;
-  }
-
-  async getJob(jobId: string): Promise<JobReceivable | null> {
-    await this.init();
-    return this.state.jobs[jobId] ?? null;
+    return profile;
   }
 
   async quoteAdvance(input: {
@@ -113,9 +138,16 @@ export class CreditAgent extends DurableObject<Env> {
     purpose: string;
   }): Promise<CreditQuote> {
     await this.init();
-    const profile = await this.getProfile(input.agentAddress);
-    const job = this.requireOpenJob(input.jobId, normalizeAddress(input.agentAddress));
-    return quoteAdvance(profile, job, roundCurrency(input.requestedAmount), input.purpose);
+    const profile = await this.getProfileInternal(input.agentAddress);
+    const job = this.requireOpenJob(input.jobId, norm(input.agentAddress));
+    const quote = quoteAdvance(profile, job, rc(input.requestedAmount), input.purpose);
+    this.pushEvent("quote_issued", norm(input.agentAddress), `Quote: ${quote.decision} for $${quote.approvedAmount.toFixed(2)}.`, {
+      decision: quote.decision,
+      approvedAmount: quote.approvedAmount,
+      requestedAmount: quote.requestedAmount,
+    });
+    await this.persist();
+    return quote;
   }
 
   async createAdvance(input: {
@@ -125,20 +157,29 @@ export class CreditAgent extends DurableObject<Env> {
     purpose: string;
   }): Promise<{ quote: CreditQuote; advance?: CreditAdvance }> {
     await this.init();
-    const quote = await this.quoteAdvance(input);
+    const quote = await this.quoteAdvanceInternal(input);
     if (quote.decision !== "APPROVED") {
       return { quote };
     }
 
+    // Check treasury
+    if (this.state.treasury.availableFunds < quote.approvedAmount) {
+      quote.decision = "DECLINED";
+      quote.reasons.push("Insufficient treasury funds.");
+      return { quote };
+    }
+
     const agent = this.requireAgent(input.agentAddress);
-    const job = this.requireOpenJob(input.jobId, normalizeAddress(input.agentAddress));
+    const job = this.requireOpenJob(input.jobId, norm(input.agentAddress));
     const now = Date.now();
+
+    const spendPolicy = buildSpendPolicy(quote.approvedAmount, input.purpose);
 
     const advance: CreditAdvance = {
       id: crypto.randomUUID(),
-      agentAddress: normalizeAddress(input.agentAddress),
+      agentAddress: norm(input.agentAddress),
       jobId: job.id,
-      requestedAmount: roundCurrency(input.requestedAmount),
+      requestedAmount: rc(input.requestedAmount),
       approvedAmount: quote.approvedAmount,
       fee: quote.fee,
       purpose: input.purpose,
@@ -147,85 +188,278 @@ export class CreditAgent extends DurableObject<Env> {
       status: "active",
       dueAt: now + job.durationHours * 60 * 60 * 1000,
       createdAt: now,
+      spendPolicy,
+      totalSpent: 0,
+      spendCount: 0,
     };
 
-    agent.outstandingBalance = roundCurrency(agent.outstandingBalance + advance.approvedAmount + advance.fee);
-    agent.totalBorrowed = roundCurrency(agent.totalBorrowed + advance.approvedAmount);
+    agent.outstandingBalance = rc(agent.outstandingBalance + advance.approvedAmount + advance.fee);
+    agent.totalBorrowed = rc(agent.totalBorrowed + advance.approvedAmount);
     agent.updatedAt = now;
 
     this.state.advances[advance.id] = advance;
-    await this.persist();
+    this.state.treasury = reserveFunds(this.state.treasury, advance.approvedAmount);
 
+    this.pushEvent("advance_created", norm(input.agentAddress), `Advance $${advance.approvedAmount.toFixed(2)} issued for "${input.purpose}".`, {
+      advanceId: advance.id,
+      amount: advance.approvedAmount,
+      fee: advance.fee,
+      jobId: job.id,
+    });
+
+    await this.persist();
     return { quote, advance };
   }
 
+  // ─── Marketplace ───
+
+  async createJob(body: {
+    agentAddress: string;
+    payer: string;
+    title: string;
+    expectedPayout: number;
+    durationHours: number;
+    category: string;
+  }): Promise<JobReceivable> {
+    await this.init();
+    this.requireAgent(body.agentAddress);
+
+    const job: JobReceivable = {
+      id: crypto.randomUUID(),
+      agentAddress: norm(body.agentAddress),
+      payer: body.payer,
+      title: body.title,
+      expectedPayout: rc(body.expectedPayout),
+      durationHours: body.durationHours,
+      category: body.category,
+      status: "open",
+      createdAt: Date.now(),
+    };
+
+    this.state.jobs[job.id] = job;
+    this.pushEvent("job_created", norm(body.agentAddress), `Job "${job.title}" created ($${job.expectedPayout.toFixed(2)}).`, {
+      jobId: job.id,
+      expectedPayout: job.expectedPayout,
+    });
+    await this.persist();
+    return job;
+  }
+
+  async postJob(input: {
+    postedBy: string;
+    title: string;
+    expectedPayout: number;
+    durationHours: number;
+    category: string;
+    requiredCapabilities?: string[];
+  }): Promise<JobReceivable> {
+    await this.init();
+
+    const job: JobReceivable = {
+      id: crypto.randomUUID(),
+      agentAddress: "",
+      payer: input.postedBy,
+      postedBy: input.postedBy,
+      title: input.title,
+      expectedPayout: rc(input.expectedPayout),
+      durationHours: input.durationHours,
+      category: input.category,
+      requiredCapabilities: input.requiredCapabilities,
+      status: "open",
+      createdAt: Date.now(),
+    };
+
+    this.state.jobs[job.id] = job;
+    this.pushEvent("job_posted", input.postedBy, `Job posted: "${job.title}" ($${job.expectedPayout.toFixed(2)}).`, {
+      jobId: job.id,
+      expectedPayout: job.expectedPayout,
+      category: job.category,
+    });
+    await this.persist();
+    return job;
+  }
+
+  async submitBid(input: {
+    jobId: string;
+    agentAddress: string;
+    proposedCost: number;
+    estimatedHours: number;
+    capabilities: string[];
+    pitch: string;
+  }): Promise<{ bid: Bid; evaluation: { eligible: boolean; reasons: string[] } }> {
+    await this.init();
+    const agent = this.requireAgent(input.agentAddress);
+    const job = this.requireJob(input.jobId);
+    if (job.status !== "open") throw new Error("Job is not open for bidding.");
+    if (job.agentAddress) throw new Error("Job is already assigned.");
+
+    const profile = computeCreditProfile(agent);
+
+    const bid: Bid = {
+      id: crypto.randomUUID(),
+      jobId: job.id,
+      agentAddress: norm(input.agentAddress),
+      proposedCost: rc(input.proposedCost),
+      estimatedHours: input.estimatedHours,
+      capabilities: input.capabilities,
+      pitch: input.pitch,
+      creditScore: profile.creditScore,
+      status: "pending",
+      createdAt: Date.now(),
+    };
+
+    const evaluation = evaluateBid(bid, job);
+    this.state.bids[bid.id] = bid;
+
+    this.pushEvent("bid_submitted", norm(input.agentAddress), `Bid on "${job.title}": $${bid.proposedCost.toFixed(2)}, score ${bid.creditScore}.`, {
+      bidId: bid.id,
+      jobId: job.id,
+      proposedCost: bid.proposedCost,
+      creditScore: bid.creditScore,
+      eligible: evaluation.eligible,
+    });
+
+    await this.persist();
+    return { bid, evaluation };
+  }
+
+  async getBids(jobId: string): Promise<{ bids: Bid[]; ranked: Bid[] }> {
+    await this.init();
+    const job = this.requireJob(jobId);
+    const bids = Object.values(this.state.bids).filter((b) => b.jobId === jobId);
+    const eligible = bids.filter((b) => evaluateBid(b, job).eligible);
+    const ranked = rankBids(eligible, job);
+    return { bids, ranked };
+  }
+
+  async awardBid(input: {
+    jobId: string;
+    bidId: string;
+  }): Promise<{ job: JobReceivable; acceptedBid: Bid; rejectedBids: Bid[] }> {
+    await this.init();
+    const job = this.requireJob(input.jobId);
+    if (job.agentAddress) throw new Error("Job is already assigned.");
+    const bid = this.state.bids[input.bidId];
+    if (!bid) throw new Error(`Unknown bid: ${input.bidId}`);
+    if (bid.jobId !== job.id) throw new Error("Bid does not belong to this job.");
+
+    const updatedJob = awardJob(job, bid);
+    this.state.jobs[job.id] = updatedJob;
+
+    bid.status = "accepted";
+
+    const rejectedBids: Bid[] = [];
+    for (const b of Object.values(this.state.bids)) {
+      if (b.jobId === job.id && b.id !== bid.id) {
+        b.status = "rejected";
+        rejectedBids.push(b);
+      }
+    }
+
+    this.pushEvent("bid_awarded", bid.agentAddress, `Bid awarded for "${job.title}" to ${bid.agentAddress}.`, {
+      jobId: job.id,
+      bidId: bid.id,
+      proposedCost: bid.proposedCost,
+    });
+
+    await this.persist();
+    return { job: updatedJob, acceptedBid: bid, rejectedBids };
+  }
+
+  async listOpenJobs(): Promise<JobReceivable[]> {
+    await this.init();
+    return Object.values(this.state.jobs).filter(
+      (j) => j.status === "open" && !j.agentAddress,
+    );
+  }
+
+  // ─── Job Completion & Waterfall ───
+
   async completeJob(input: { jobId: string; actualPayout?: number }): Promise<{
     job: JobReceivable;
+    waterfall: WaterfallResult;
     settledAdvances: CreditAdvance[];
-    repaidAmount: number;
-    leftoverPayout: number;
   }> {
     await this.init();
     const job = this.requireJob(input.jobId);
-    if (job.status !== "open") {
-      throw new Error("Job is not open.");
-    }
+    if (job.status !== "open") throw new Error("Job is not open.");
 
-    const actualPayout = roundCurrency(input.actualPayout ?? job.expectedPayout);
+    const actualPayout = rc(input.actualPayout ?? job.expectedPayout);
     job.status = "completed";
     job.completedAt = Date.now();
     job.actualPayout = actualPayout;
 
     const agent = this.requireAgent(job.agentAddress);
     const activeAdvances = Object.values(this.state.advances).filter(
-      (advance) => advance.jobId === job.id && advance.status === "active",
+      (a) => a.jobId === job.id && a.status === "active",
     );
 
-    let repayable = actualPayout;
-    const settledAdvances: CreditAdvance[] = [];
-    let repaidAmount = 0;
+    const waterfall = settleWaterfall(actualPayout, activeAdvances);
+
+    // Distribute settlement across advances proportionally
+    const totalDue = activeAdvances.reduce((s, a) => s + a.approvedAmount + a.fee, 0);
+    let repaidTotal = 0;
 
     for (const advance of activeAdvances) {
-      const amountDue = roundCurrency(advance.approvedAmount + advance.fee);
-      const amountPaid = Math.min(repayable, amountDue);
-      repayable = roundCurrency(repayable - amountPaid);
-      repaidAmount = roundCurrency(repaidAmount + amountPaid);
+      const advanceDue = rc(advance.approvedAmount + advance.fee);
+      const share = totalDue > 0 ? advanceDue / totalDue : 0;
+      const amountPaid = rc((waterfall.principalRepaid + waterfall.feePaid) * share);
+      repaidTotal = rc(repaidTotal + amountPaid);
 
-      advance.status = amountPaid >= amountDue ? "repaid" : "defaulted";
       advance.repaidAt = Date.now();
-      advance.repaidAmount = roundCurrency(amountPaid);
-      if (advance.status === "defaulted") {
-        advance.defaultReason = "Job payout did not cover the full amount due.";
-        agent.defaultedAdvances += 1;
-      } else {
+      advance.repaidAmount = amountPaid;
+
+      if (amountPaid >= advanceDue) {
+        advance.status = "repaid";
         agent.repaidAdvances += 1;
+        this.pushEvent("advance_repaid", agent.address, `Advance $${advance.approvedAmount.toFixed(2)} repaid in full.`, {
+          advanceId: advance.id,
+          amountPaid,
+        });
+      } else {
+        advance.status = "defaulted";
+        advance.defaultReason = `Payout shortfall. Paid $${amountPaid.toFixed(2)} of $${advanceDue.toFixed(2)}.`;
+        agent.defaultedAdvances += 1;
+        const loss = rc(advanceDue - amountPaid);
+        this.state.treasury = recordDefaultLoss(this.state.treasury, loss);
+        this.pushEvent("advance_defaulted", agent.address, `Advance partially defaulted. Shortfall: $${loss.toFixed(2)}.`, {
+          advanceId: advance.id,
+          amountPaid,
+          shortfall: loss,
+        });
       }
 
-      agent.outstandingBalance = roundCurrency(agent.outstandingBalance - amountDue);
-      agent.totalRepaid = roundCurrency(agent.totalRepaid + amountPaid);
-      settledAdvances.push(advance);
+      agent.outstandingBalance = rc(agent.outstandingBalance - advanceDue);
     }
 
+    // Return funds to treasury
+    this.state.treasury = returnFunds(this.state.treasury, waterfall.principalRepaid, waterfall.feePaid);
+
     agent.successfulJobs += 1;
-    agent.averageCompletedPayout = updateAveragePayout(agent.averageCompletedPayout, agent.successfulJobs, actualPayout);
+    agent.totalRepaid = rc(agent.totalRepaid + repaidTotal);
+    agent.averageCompletedPayout = updateAveragePayout(
+      agent.averageCompletedPayout,
+      agent.successfulJobs,
+      actualPayout,
+    );
     agent.updatedAt = Date.now();
 
-    await this.persist();
+    this.pushEvent("job_completed", agent.address, `Job "${job.title}" completed. Payout: $${actualPayout.toFixed(2)}.`, {
+      jobId: job.id,
+      actualPayout,
+      waterfallStatus: waterfall.status,
+    });
 
-    return {
-      job,
-      settledAdvances,
-      repaidAmount,
-      leftoverPayout: roundCurrency(repayable),
-    };
+    await this.persist();
+    return { job, waterfall, settledAdvances: activeAdvances };
   }
+
+  // ─── Default ───
 
   async defaultAdvance(input: { advanceId: string; reason: string }): Promise<CreditAdvance> {
     await this.init();
     const advance = this.requireAdvance(input.advanceId);
-    if (advance.status !== "active") {
-      throw new Error("Advance is not active.");
-    }
+    if (advance.status !== "active") throw new Error("Advance is not active.");
 
     advance.status = "defaulted";
     advance.defaultReason = input.reason;
@@ -234,16 +468,312 @@ export class CreditAgent extends DurableObject<Env> {
 
     const agent = this.requireAgent(advance.agentAddress);
     agent.defaultedAdvances += 1;
-    agent.outstandingBalance = roundCurrency(agent.outstandingBalance - advance.approvedAmount - advance.fee);
+    const lostAmount = rc(advance.approvedAmount + advance.fee);
+    agent.outstandingBalance = rc(agent.outstandingBalance - lostAmount);
     agent.updatedAt = Date.now();
+
+    // Repeat-default penalty
+    if (agent.defaultedAdvances >= 2) {
+      agent.trustScore = Math.max(0, agent.trustScore - 10);
+    }
+
+    this.state.treasury = recordDefaultLoss(this.state.treasury, advance.approvedAmount);
 
     const job = this.state.jobs[advance.jobId];
     if (job && job.status === "open") {
       job.status = "defaulted";
     }
 
+    this.pushEvent("advance_defaulted", agent.address, `Advance $${advance.approvedAmount.toFixed(2)} defaulted: ${input.reason}`, {
+      advanceId: advance.id,
+      amount: advance.approvedAmount,
+      reason: input.reason,
+    });
+
     await this.persist();
     return advance;
+  }
+
+  // ─── Treasury ───
+
+  async deposit(input: {
+    lenderAddress: string;
+    amount: number;
+    memo?: string;
+  }): Promise<{ deposit: TreasuryDeposit; treasury: TreasuryState }> {
+    await this.init();
+    const result = depositFunds(
+      this.state.treasury,
+      input.lenderAddress,
+      input.amount,
+      input.memo ?? "",
+    );
+    this.state.treasury = result.treasury;
+
+    this.pushEvent("deposit_received", input.lenderAddress, `Treasury deposit: $${result.deposit.amount.toFixed(2)}.`, {
+      depositId: result.deposit.id,
+      amount: result.deposit.amount,
+    });
+
+    await this.persist();
+    return result;
+  }
+
+  async getTreasury(): Promise<TreasuryState> {
+    await this.init();
+    return this.state.treasury;
+  }
+
+  // ─── Spend Controls ───
+
+  async recordSpend(input: {
+    advanceId: string;
+    category: SpendCategory;
+    amount: number;
+    vendor: string;
+    description: string;
+  }): Promise<SpendRecord> {
+    await this.init();
+    const advance = this.requireAdvance(input.advanceId);
+    if (advance.status !== "active") throw new Error("Advance is not active.");
+
+    const policy = advance.spendPolicy;
+    if (!policy) throw new Error("Advance has no spend policy.");
+
+    // Calculate today's spend
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const todayStart = startOfDay.getTime();
+    const todaySpend = Object.values(this.state.spendRecords)
+      .filter(
+        (r) =>
+          r.advanceId === advance.id &&
+          r.approved &&
+          r.createdAt >= todayStart,
+      )
+      .reduce((s, r) => s + r.amount, 0);
+
+    const validation = validateSpend(
+      policy,
+      input.category,
+      rc(input.amount),
+      todaySpend,
+      advance.totalSpent ?? 0,
+      advance.approvedAmount,
+    );
+
+    const record: SpendRecord = {
+      id: crypto.randomUUID(),
+      advanceId: advance.id,
+      category: input.category,
+      amount: rc(input.amount),
+      vendor: input.vendor,
+      description: input.description,
+      approved: validation.approved,
+      rejectionReason: validation.reason,
+      createdAt: Date.now(),
+    };
+
+    this.state.spendRecords[record.id] = record;
+
+    if (validation.approved) {
+      advance.totalSpent = rc((advance.totalSpent ?? 0) + record.amount);
+      advance.spendCount = (advance.spendCount ?? 0) + 1;
+    }
+
+    this.pushEvent("spend_recorded", advance.agentAddress, `Spend ${validation.approved ? "approved" : "rejected"}: $${record.amount.toFixed(2)} on ${input.category}.`, {
+      spendId: record.id,
+      advanceId: advance.id,
+      category: input.category,
+      amount: record.amount,
+      approved: validation.approved,
+    });
+
+    await this.persist();
+    return record;
+  }
+
+  async getSpendHistory(advanceId: string): Promise<{
+    records: SpendRecord[];
+    totalSpent: number;
+    remainingBudget: number;
+    policy: SpendRecord["category"][] | null;
+  }> {
+    await this.init();
+    const advance = this.requireAdvance(advanceId);
+    const records = Object.values(this.state.spendRecords)
+      .filter((r) => r.advanceId === advanceId)
+      .sort((a, b) => b.createdAt - a.createdAt);
+
+    const totalSpent = advance.totalSpent ?? 0;
+    return {
+      records,
+      totalSpent,
+      remainingBudget: rc(advance.approvedAmount - totalSpent),
+      policy: advance.spendPolicy?.allowedCategories ?? null,
+    };
+  }
+
+  // ─── Dashboard ───
+
+  async getPortfolio(): Promise<PortfolioReport> {
+    await this.init();
+    return computePortfolio(this.state);
+  }
+
+  async getRisk(): Promise<RiskReport> {
+    await this.init();
+    return computeRisk(this.state);
+  }
+
+  // ─── Timeline ───
+
+  async getTimeline(limit = 50): Promise<TimelineEvent[]> {
+    await this.init();
+    return this.state.timeline.slice(-limit).reverse();
+  }
+
+  // ─── Demo ───
+
+  async bootstrapDemo(scenario: "happy" | "failure" | "both"): Promise<{
+    summary: string;
+    agentsCreated: number;
+    jobsCreated: number;
+    advancesCreated: number;
+    events: number;
+  }> {
+    await this.init();
+
+    // Seed treasury if empty
+    if (this.state.treasury.availableFunds <= 0) {
+      const { treasury } = depositFunds(
+        this.state.treasury,
+        "0xTreasury_Seed_Lender",
+        1000,
+        "Demo seed capital",
+      );
+      this.state.treasury = treasury;
+      this.pushEvent("deposit_received", "0xTreasury_Seed_Lender", "Demo treasury seeded with $1000.", { amount: 1000 });
+    }
+
+    let agentsCreated = 0;
+    let jobsCreated = 0;
+    let advancesCreated = 0;
+    const startEvents = this.state.timeline.length;
+
+    if (scenario === "happy" || scenario === "both") {
+      const data = generateHappyPath();
+      const jobIds: string[] = [];
+
+      for (const a of data.agents) {
+        await this.registerAgent({ ...a, identityRegistered: true });
+        agentsCreated++;
+      }
+
+      for (const j of data.jobs) {
+        const job = await this.createJob(j);
+        jobIds.push(job.id);
+        jobsCreated++;
+      }
+
+      for (const adv of data.advances) {
+        const jobId = jobIds[adv.jobIndex];
+        await this.createAdvance({
+          agentAddress: adv.agentAddress,
+          jobId,
+          requestedAmount: adv.requestedAmount,
+          purpose: adv.purpose,
+        });
+        advancesCreated++;
+      }
+
+      for (const comp of data.completions) {
+        const jobId = jobIds[comp.jobIndex];
+        await this.completeJob({ jobId, actualPayout: comp.actualPayout });
+      }
+    }
+
+    if (scenario === "failure" || scenario === "both") {
+      const data = generateFailurePath();
+      const jobIds: string[] = [];
+
+      for (const a of data.agents) {
+        await this.registerAgent({ ...a, identityRegistered: false });
+        agentsCreated++;
+      }
+
+      for (const j of data.jobs) {
+        const job = await this.createJob(j);
+        jobIds.push(job.id);
+        jobsCreated++;
+      }
+
+      for (const adv of data.advances) {
+        const jobId = jobIds[adv.jobIndex];
+        const result = await this.createAdvance({
+          agentAddress: adv.agentAddress,
+          jobId,
+          requestedAmount: adv.requestedAmount,
+          purpose: adv.purpose,
+        });
+        if (result.advance) advancesCreated++;
+      }
+
+      for (const pc of data.partialCompletions) {
+        const jobId = jobIds[pc.jobIndex];
+        await this.completeJob({ jobId, actualPayout: pc.actualPayout });
+      }
+
+      for (const def of data.defaults) {
+        // Find the advance for this job
+        const jobId = jobIds[data.advances[def.advanceIndex].jobIndex];
+        const advance = Object.values(this.state.advances).find(
+          (a) => a.jobId === jobId && a.status === "active",
+        );
+        if (advance) {
+          await this.defaultAdvance({ advanceId: advance.id, reason: def.reason });
+        }
+      }
+    }
+
+    const totalEvents = this.state.timeline.length - startEvents;
+    const names =
+      scenario === "both"
+        ? "happy-path and failure-path"
+        : scenario === "happy"
+          ? "happy-path"
+          : "failure-path";
+
+    return {
+      summary: `Bootstrapped ${names} demo: ${agentsCreated} agents, ${jobsCreated} jobs, ${advancesCreated} advances.`,
+      agentsCreated,
+      jobsCreated,
+      advancesCreated,
+      events: totalEvents,
+    };
+  }
+
+  async resetState(): Promise<{
+    message: string;
+    previousAgents: number;
+    previousJobs: number;
+    previousAdvances: number;
+  }> {
+    await this.init();
+    const counts = {
+      previousAgents: Object.keys(this.state.agents).length,
+      previousJobs: Object.keys(this.state.jobs).length,
+      previousAdvances: Object.keys(this.state.advances).length,
+    };
+
+    this.state = structuredClone(DEFAULT_STATE);
+    this.pushEvent("state_reset", "system", "Full state reset.", counts);
+    await this.persist();
+
+    return {
+      message: "State reset. All agents, jobs, and advances cleared.",
+      ...counts,
+    };
   }
 
   async getSnapshot(): Promise<AgentState> {
@@ -251,57 +781,64 @@ export class CreditAgent extends DurableObject<Env> {
     return this.state;
   }
 
+  // ─── Internal helpers ───
+
+  private getProfileInternal(address: string): CreditProfile {
+    const agent = this.requireAgent(address);
+    return computeCreditProfile(agent);
+  }
+
+  private quoteAdvanceInternal(input: {
+    agentAddress: string;
+    jobId: string;
+    requestedAmount: number;
+    purpose: string;
+  }): CreditQuote {
+    const profile = this.getProfileInternal(input.agentAddress);
+    const job = this.requireOpenJob(input.jobId, norm(input.agentAddress));
+    return quoteAdvance(profile, job, rc(input.requestedAmount), input.purpose);
+  }
+
   private requireAgent(address: string): AgentRecord {
-    const agent = this.state.agents[normalizeAddress(address)];
-    if (!agent) {
-      throw new Error(`Unknown agent: ${address}`);
-    }
+    const agent = this.state.agents[norm(address)];
+    if (!agent) throw new Error(`Unknown agent: ${address}`);
     return agent;
   }
 
   private requireJob(jobId: string): JobReceivable {
     const job = this.state.jobs[jobId];
-    if (!job) {
-      throw new Error(`Unknown job: ${jobId}`);
-    }
+    if (!job) throw new Error(`Unknown job: ${jobId}`);
     return job;
   }
 
   private requireOpenJob(jobId: string, agentAddress: string): JobReceivable {
     const job = this.requireJob(jobId);
-    if (job.agentAddress !== agentAddress) {
-      throw new Error("Job is not assigned to this agent.");
-    }
-    if (job.status !== "open") {
-      throw new Error("Job is not open.");
-    }
+    if (job.agentAddress !== agentAddress) throw new Error("Job is not assigned to this agent.");
+    if (job.status !== "open") throw new Error("Job is not open.");
     return job;
   }
 
   private requireAdvance(advanceId: string): CreditAdvance {
     const advance = this.state.advances[advanceId];
-    if (!advance) {
-      throw new Error(`Unknown advance: ${advanceId}`);
-    }
+    if (!advance) throw new Error(`Unknown advance: ${advanceId}`);
     return advance;
   }
 }
 
-function normalizeAddress(address: string): string {
+function norm(address: string): string {
   return address.trim().toLowerCase();
 }
 
-function roundCurrency(value: number): number {
+function rc(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function updateAveragePayout(currentAverage: number, newCount: number, newValue: number): number {
-  if (newCount <= 1) {
-    return roundCurrency(newValue);
-  }
-
-  const previousCount = newCount - 1;
-  const total = currentAverage * previousCount + newValue;
-  return roundCurrency(total / newCount);
+function updateAveragePayout(
+  currentAverage: number,
+  newCount: number,
+  newValue: number,
+): number {
+  if (newCount <= 1) return rc(newValue);
+  const total = currentAverage * (newCount - 1) + newValue;
+  return rc(total / newCount);
 }
-

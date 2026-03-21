@@ -45,6 +45,9 @@ export interface JobReceivable {
   expectedPayout: number;
   durationHours: number;
   category: string;
+  requiredCapabilities?: string[];
+  postedBy?: string;
+  awardedBidId?: string;
   status: "open" | "completed" | "defaulted";
   createdAt: number;
   completedAt?: number;
@@ -67,6 +70,9 @@ export interface CreditAdvance {
   repaidAt?: number;
   repaidAmount?: number;
   defaultReason?: string;
+  spendPolicy?: SpendPolicy;
+  totalSpent?: number;
+  spendCount?: number;
 }
 
 export type CreditDecision = "APPROVED" | "MANUAL_REVIEW" | "DECLINED";
@@ -97,5 +103,159 @@ export interface AgentState {
   agents: Record<string, AgentRecord>;
   jobs: Record<string, JobReceivable>;
   advances: Record<string, CreditAdvance>;
+  bids: Record<string, Bid>;
+  treasury: TreasuryState;
+  spendRecords: Record<string, SpendRecord>;
+  timeline: TimelineEvent[];
+}
+
+// ── Marketplace ──
+
+export interface Bid {
+  id: string;
+  jobId: string;
+  agentAddress: string;
+  proposedCost: number;
+  estimatedHours: number;
+  capabilities: string[];
+  pitch: string;
+  creditScore: number;
+  status: "pending" | "accepted" | "rejected";
+  createdAt: number;
+}
+
+// ── Treasury ──
+
+export type SpendCategory =
+  | "compute"
+  | "api"
+  | "gas"
+  | "sub-agent"
+  | "browser"
+  | "storage"
+  | "other";
+
+export interface SpendPolicy {
+  allowedCategories: SpendCategory[];
+  maxSingleSpend: number;
+  dailyLimit: number;
+}
+
+export interface SpendRecord {
+  id: string;
+  advanceId: string;
+  category: SpendCategory;
+  amount: number;
+  vendor: string;
+  description: string;
+  approved: boolean;
+  rejectionReason?: string;
+  createdAt: number;
+}
+
+export interface TreasuryState {
+  totalDeposited: number;
+  totalAdvanced: number;
+  totalRepaid: number;
+  totalFeesEarned: number;
+  totalDefaultLoss: number;
+  availableFunds: number;
+  deposits: TreasuryDeposit[];
+}
+
+export interface TreasuryDeposit {
+  id: string;
+  lenderAddress: string;
+  amount: number;
+  memo: string;
+  createdAt: number;
+}
+
+export interface WaterfallResult {
+  grossPayout: number;
+  principalRepaid: number;
+  feePaid: number;
+  penaltyApplied: number;
+  agentNet: number;
+  shortfall: number;
+  status: "full_repayment" | "partial_repayment" | "total_default";
+  breakdown: string[];
+}
+
+// ── Timeline & Dashboard ──
+
+export interface TimelineEvent {
+  id: string;
+  timestamp: number;
+  type:
+    | "agent_registered"
+    | "job_created"
+    | "job_posted"
+    | "bid_submitted"
+    | "bid_awarded"
+    | "job_completed"
+    | "job_defaulted"
+    | "advance_created"
+    | "advance_repaid"
+    | "advance_defaulted"
+    | "credit_check"
+    | "quote_issued"
+    | "spend_recorded"
+    | "deposit_received"
+    | "state_reset";
+  actor: string;
+  description: string;
+  data: Record<string, unknown>;
+}
+
+export interface PortfolioReport {
+  summary: {
+    totalAgents: number;
+    totalJobs: number;
+    totalAdvances: number;
+    activeAdvances: number;
+    totalExposure: number;
+    totalRepaid: number;
+    totalDefaulted: number;
+    totalFeesEarned: number;
+    repaymentRate: number;
+    defaultRate: number;
+    averageAdvanceSize: number;
+    averageCreditScore: number;
+  };
+  exposureByCategory: Record<string, number>;
+  topBorrowers: Array<{
+    address: string;
+    name: string;
+    totalBorrowed: number;
+    outstandingBalance: number;
+    creditScore: number;
+    repaymentRate: number;
+  }>;
+  recentActivity: TimelineEvent[];
+}
+
+export interface RiskReport {
+  overallRisk: "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
+  healthScore: number;
+  concentrationRisk: number;
+  metrics: {
+    utilizationRate: number;
+    weightedDefaultRate: number;
+    averageCoverageRatio: number;
+    largestSingleExposure: number;
+    overdueCount: number;
+  };
+  alerts: string[];
+  recommendations: string[];
+}
+
+export interface DemoScenario {
+  name: string;
+  description: string;
+  agents: number;
+  jobs: number;
+  advances: number;
+  includesDefault: boolean;
 }
 
