@@ -17,9 +17,9 @@ export default function App() {
   const [treasury, setTreasury] = useState<TreasuryState | null>(null);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [key, setKey] = useState(0);
 
   const refresh = useCallback(async () => {
+    setLoading(true);
     try {
       const [p, r, t, tl] = await Promise.all([
         api.portfolio(), api.risk(), api.treasury(), api.timeline(30),
@@ -32,28 +32,26 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh, key]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   const onDemo = useCallback(async (action: 'happy' | 'failure' | 'both' | 'reset') => {
     setLoading(true);
     try {
       if (action === 'reset') await api.reset();
       else await api.bootstrap(action);
-      setKey(k => k + 1);
+      await refresh();
     } catch (e) {
       console.error('Demo action failed:', e);
       setLoading(false);
     }
-  }, []);
+  }, [refresh]);
 
   if (loading && !portfolio) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-bg">
-        <div className="text-center">
-          <p className="text-text-muted text-xs">
-            &gt; connecting to trustvault-credit...<span className="animate-blink">|</span>
-          </p>
-        </div>
+        <p className="text-text-muted text-xs">
+          &gt; connecting to trustvault-credit...<span className="animate-blink">|</span>
+        </p>
       </div>
     );
   }
@@ -66,7 +64,7 @@ export default function App() {
         {portfolio && <StatsRow summary={portfolio.summary} />}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {risk && <RiskGauge risk={risk} />}
-          {treasury && portfolio && <WaterfallChart treasury={treasury} summary={portfolio.summary} />}
+          {treasury && portfolio && <WaterfallChart treasury={treasury} totalExposure={portfolio.summary.totalExposure} />}
           {risk && <AlertsPanel alerts={risk.alerts} recommendations={risk.recommendations} />}
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

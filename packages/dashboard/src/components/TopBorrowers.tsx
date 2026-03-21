@@ -1,7 +1,6 @@
 import type { PortfolioReport } from '../api';
+import { scoreColor } from '../lib/chart';
 import { Card } from './Card';
-
-function scoreColor(s: number) { return s >= 70 ? 'text-green' : s >= 40 ? 'text-amber' : 'text-red'; }
 
 export function TopBorrowers({ borrowers }: { borrowers: PortfolioReport['topBorrowers'] }) {
   if (!borrowers.length) {
@@ -11,7 +10,6 @@ export function TopBorrowers({ borrowers }: { borrowers: PortfolioReport['topBor
   return (
     <Card title="Top Borrowers">
       <div className="space-y-0">
-        {/* Table header */}
         <div className="grid grid-cols-[1fr_80px_80px_60px] gap-2 text-[9px] text-text-muted uppercase tracking-wider pb-2 border-b border-border">
           <span>agent</span>
           <span className="text-right">borrowed</span>

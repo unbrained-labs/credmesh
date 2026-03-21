@@ -1,4 +1,5 @@
 import type { PortfolioReport } from '../api';
+import { scoreColor } from '../lib/chart';
 
 function Stat({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
@@ -14,8 +15,7 @@ export function StatsRow({ summary: s }: { summary: PortfolioReport['summary'] }
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-px bg-border-bright">
       <Stat label="Agents" value={String(s.totalAgents)} />
-      <Stat label="Credit Score" value={String(s.averageCreditScore)}
-        color={s.averageCreditScore >= 70 ? 'text-green' : s.averageCreditScore >= 40 ? 'text-amber' : 'text-red'} />
+      <Stat label="Credit Score" value={String(s.averageCreditScore)} color={scoreColor(s.averageCreditScore)} />
       <Stat label="Active Advances" value={String(s.activeAdvances)} sub={`$${s.totalExposure.toFixed(2)} exposure`} />
       <Stat label="Repayment" value={`${(s.repaymentRate * 100).toFixed(0)}%`}
         color={s.repaymentRate >= 0.8 ? 'text-green' : 'text-amber'} />

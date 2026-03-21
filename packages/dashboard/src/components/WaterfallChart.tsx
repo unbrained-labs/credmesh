@@ -1,11 +1,14 @@
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import type { TreasuryState, PortfolioReport } from '../api';
+import { AXIS_TICK, TOOLTIP_STYLE, CURSOR_STYLE, COLORS, dollarFmt } from '../lib/chart';
 import { Card } from './Card';
 
-const COLORS = ['#536dfe', '#00ff41', '#00e5ff', '#ff1744', '#ff9100'];
+const BAR_COLORS = [COLORS.indigo, COLORS.green, COLORS.cyan, COLORS.red, COLORS.amber];
+const MARGIN = { top: 0, right: 0, left: -20, bottom: 0 };
+const AXIS_LINE = { stroke: '#1a1a1a' };
 
-export function WaterfallChart({ treasury: t, summary: s }: {
-  treasury: TreasuryState; summary: PortfolioReport['summary'];
+export function WaterfallChart({ treasury: t, totalExposure }: {
+  treasury: TreasuryState; totalExposure: number;
 }) {
   const data = [
     { name: 'DEPOSIT', value: t.totalDeposited },
@@ -18,22 +21,18 @@ export function WaterfallChart({ treasury: t, summary: s }: {
   return (
     <Card title="Treasury Flow">
       <ResponsiveContainer width="100%" height={200}>
-        <BarChart data={data} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-          <XAxis dataKey="name" tick={{ fill: '#666', fontSize: 9, fontFamily: 'JetBrains Mono' }} axisLine={{ stroke: '#1a1a1a' }} tickLine={false} />
-          <YAxis tick={{ fill: '#666', fontSize: 9, fontFamily: 'JetBrains Mono' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
-          <Tooltip
-            contentStyle={{ background: '#0a0a0a', border: '1px solid #333', borderRadius: 0, fontSize: 11, fontFamily: 'JetBrains Mono', color: '#e0e0e0' }}
-            formatter={(v: number) => [`$${v.toFixed(2)}`, '']}
-            cursor={{ fill: 'rgba(255,255,255,0.03)' }}
-          />
+        <BarChart data={data} margin={MARGIN}>
+          <XAxis dataKey="name" tick={AXIS_TICK} axisLine={AXIS_LINE} tickLine={false} />
+          <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
+          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={dollarFmt} cursor={CURSOR_STYLE} />
           <Bar dataKey="value" radius={0}>
-            {data.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
+            {data.map((d) => <Cell key={d.name} fill={BAR_COLORS[data.indexOf(d)]} />)}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
       <div className="flex justify-between text-[10px] text-text-muted mt-2 pt-2 border-t border-border">
         <span>fees_earned: <span className="text-cyan">${t.totalFeesEarned.toFixed(2)}</span></span>
-        <span>exposure: <span className="text-amber">${s.totalExposure.toFixed(2)}</span></span>
+        <span>exposure: <span className="text-amber">${totalExposure.toFixed(2)}</span></span>
       </div>
     </Card>
   );
