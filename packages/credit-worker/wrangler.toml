@@ -1,0 +1,21 @@
+name = "trustvault-credit"
+main = "src/index.ts"
+compatibility_date = "2025-03-14"
+compatibility_flags = ["nodejs_compat"]
+
+[durable_objects]
+bindings = [
+  { name = "CREDIT_AGENT", class_name = "CreditAgent" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["CreditAgent"]
+
+[vars]
+AGENT_NAME = "TrustVault Credit"
+
+# Optional secrets / vars
+# CHAIN_RPC_URL
+# IDENTITY_REGISTRY
+
