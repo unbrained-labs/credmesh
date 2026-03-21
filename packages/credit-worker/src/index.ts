@@ -4,7 +4,8 @@ import { agentCard } from "./agent-card";
 import { CreditAgent } from "./engine";
 import { listScenarios } from "./demo";
 import { checkIdentityRegistration } from "./erc8004";
-import { isChainEnabled, getAgentWallet, getTreasuryBalance, getReputation, checkIdentityOnchain, getTokenBalance } from "./chain";
+import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getReputation, checkIdentityOnchain, getTokenBalance } from "./chain";
+import { authMiddleware } from "./auth";
 import type { AgentRegistrationInput, Env, SpendCategory, TimelineEvent } from "./types";
 
 export { CreditAgent };
@@ -12,6 +13,11 @@ export { CreditAgent };
 const app = new Hono<{ Bindings: Env }>();
 
 app.use("*", cors());
+app.use("/agents/*", authMiddleware);
+app.use("/credit/*", authMiddleware);
+app.use("/marketplace/*", authMiddleware);
+app.use("/spend/*", authMiddleware);
+app.use("/treasury/*", authMiddleware);
 
 // ─── Discovery ───
 
@@ -44,19 +50,24 @@ app.get("/cover.svg", (c) => {
 
 app.get("/health", async (c) => {
   const chainEnabled = isChainEnabled(c.env);
+  const escrowEnabled = isEscrowEnabled(c.env);
   const wallet = getAgentWallet(c.env);
-  const onchainBalance = chainEnabled ? await getTreasuryBalance(c.env) : null;
+  const escrowStats = escrowEnabled ? await getEscrowStats(c.env) : null;
+  const treasuryBalance = chainEnabled ? await getTreasuryBalance(c.env) : null;
   return c.json({
     status: "ok",
     agent: c.env.AGENT_NAME || "TrustVault Credit",
-    version: "0.3.0",
+    version: "0.4.0",
     timestamp: Date.now(),
     chain: {
       enabled: chainEnabled,
       network: chainEnabled ? "sepolia" : null,
       wallet,
       tokenAddress: c.env.TEST_USDC ?? null,
-      onchainBalance: onchainBalance ? `${onchainBalance} tUSDC` : null,
+      escrowAddress: c.env.CREDIT_ESCROW ?? null,
+      escrowEnabled,
+      escrowStats,
+      treasuryBalance: treasuryBalance ? `${treasuryBalance} tUSDC` : null,
     },
   });
 });

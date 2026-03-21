@@ -31,7 +31,7 @@ import type {
   TreasuryState,
   WaterfallResult,
 } from "./types";
-import { transferTokens, writeReputation, isChainEnabled } from "./chain";
+import { escrowIssueAdvance, escrowSettle, writeReputation, isChainEnabled, isEscrowEnabled, transferTokens } from "./chain";
 import { norm, rc } from "./utils";
 
 const DEFAULT_STATE: AgentState = {
@@ -192,12 +192,15 @@ export class CreditAgent extends DurableObject<Env> {
     this.state.advances[advance.id] = advance;
     this.state.treasury = reserveFunds(this.state.treasury, advance.approvedAmount);
 
-    // Transfer tokens on-chain if chain is configured
-    if (isChainEnabled(this.env)) {
+    // Issue advance on-chain: escrow contract or direct transfer
+    if (isEscrowEnabled(this.env)) {
+      const txResult = await escrowIssueAdvance(
+        this.env, advance.id, input.agentAddress, advance.approvedAmount, advance.fee,
+      );
+      if (txResult) advance.transferTxHash = txResult.txHash;
+    } else if (isChainEnabled(this.env)) {
       const txResult = await transferTokens(this.env, input.agentAddress, advance.approvedAmount);
-      if (txResult) {
-        advance.transferTxHash = txResult.txHash;
-      }
+      if (txResult) advance.transferTxHash = txResult.txHash;
     }
 
     this.pushEvent("advance_created", norm(input.agentAddress), `Advance $${advance.approvedAmount.toFixed(2)} issued for "${input.purpose}".`, {
@@ -432,6 +435,17 @@ export class CreditAgent extends DurableObject<Env> {
       actualPayout,
     );
     agent.updatedAt = Date.now();
+
+    // Settle advances on-chain via escrow waterfall
+    if (isEscrowEnabled(this.env)) {
+      for (const advance of activeAdvances) {
+        const repayAmount = advance.repaidAmount ?? 0;
+        if (repayAmount > 0) {
+          const settleTx = await escrowSettle(this.env, advance.id, repayAmount);
+          if (settleTx) advance.repaymentTxHash = settleTx.txHash;
+        }
+      }
+    }
 
     // Write reputation to ReputationRegistry on-chain
     if (isChainEnabled(this.env)) {
