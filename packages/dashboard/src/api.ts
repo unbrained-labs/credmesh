@@ -18,6 +18,23 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   return res.json();
 }
 
+// Returns both the parsed result and the raw JSON for display
+async function postRaw<T>(path: string, body?: unknown): Promise<{ result: T; request: { method: string; url: string; body: unknown }; response: string }> {
+  const url = `${BASE}${path}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(text);
+  return {
+    result: JSON.parse(text) as T,
+    request: { method: 'POST', url: path, body },
+    response: text,
+  };
+}
+
 export interface PortfolioReport {
   summary: {
     totalAgents: number; totalJobs: number; totalAdvances: number;
@@ -61,4 +78,19 @@ export const api = {
   bootstrap: (scenario: 'happy' | 'failure' | 'both') =>
     post<{ summary: string }>('/demo/bootstrap', { scenario }),
   reset: () => post<{ message: string }>('/demo/reset'),
+
+  // Interactive actions — return raw request/response for display
+  registerAgent: (body: { address: string; name: string; trustScore: number; successfulJobs: number; failedJobs: number }) =>
+    postRaw('/agents/register', body),
+  postJob: (body: { postedBy: string; title: string; expectedPayout: number; durationHours: number; category: string }) =>
+    postRaw('/marketplace/post', body),
+  createJob: (body: { agentAddress: string; payer: string; title: string; expectedPayout: number; durationHours: number; category: string }) =>
+    postRaw('/marketplace/jobs', body),
+  requestAdvance: (body: { agentAddress: string; jobId: string; requestedAmount: number; purpose: string }) =>
+    postRaw('/credit/advance', body),
+  completeJob: (jobId: string, actualPayout?: number) =>
+    postRaw(`/marketplace/jobs/${jobId}/complete`, { actualPayout }),
+  depositFunds: (body: { lenderAddress: string; amount: number; memo: string }) =>
+    postRaw('/treasury/deposit', body),
+  openJobs: () => get<Array<{ id: string; title: string; expectedPayout: number; category: string }>>('/marketplace/open'),
 };

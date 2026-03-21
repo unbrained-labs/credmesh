@@ -10,6 +10,7 @@ import { TopBorrowers } from './components/TopBorrowers';
 import { Timeline } from './components/Timeline';
 import { DemoControls } from './components/DemoControls';
 import { AlertsPanel } from './components/AlertsPanel';
+import { Terminal } from './components/Terminal';
 
 export default function App() {
   const [portfolio, setPortfolio] = useState<PortfolioReport | null>(null);
@@ -62,6 +63,12 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 py-4 space-y-4">
         <DemoControls onAction={onDemo} loading={loading} />
         {portfolio && <StatsRow summary={portfolio.summary} />}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Terminal onMutation={refresh} />
+          <Timeline events={timeline} />
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {risk && <RiskGauge risk={risk} />}
           {treasury && portfolio && <WaterfallChart treasury={treasury} totalExposure={portfolio.summary.totalExposure} />}
@@ -71,7 +78,6 @@ export default function App() {
           {portfolio && <ExposureChart exposure={portfolio.exposureByCategory} />}
           {portfolio && <TopBorrowers borrowers={portfolio.topBorrowers} />}
         </div>
-        <Timeline events={timeline} />
       </main>
       <Footer />
     </div>
