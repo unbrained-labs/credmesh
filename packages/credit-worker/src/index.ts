@@ -4,7 +4,7 @@ import { agentCard } from "./agent-card";
 import { CreditAgent } from "./engine";
 import { listScenarios } from "./demo";
 import { checkIdentityRegistration } from "./erc8004";
-import { isChainEnabled, getAgentWallet, getTreasuryBalance } from "./chain";
+import { isChainEnabled, getAgentWallet, getTreasuryBalance, getReputation, checkIdentityOnchain, getTokenBalance } from "./chain";
 import type { AgentRegistrationInput, Env, SpendCategory, TimelineEvent } from "./types";
 
 export { CreditAgent };
@@ -245,6 +245,24 @@ app.post("/demo/reset", async (c) => {
 
 app.get("/demo/scenarios", (c) => {
   return c.json(listScenarios());
+});
+
+// ─── Onchain ───
+
+app.get("/onchain/:address", async (c) => {
+  const address = c.req.param("address");
+  const [identity, reputation, balance] = await Promise.all([
+    checkIdentityOnchain(c.env, address),
+    getReputation(c.env, address),
+    getTokenBalance(c.env, address),
+  ]);
+  return c.json({
+    address,
+    identity,
+    reputation,
+    tokenBalance: balance ? `${balance} tUSDC` : null,
+    explorer: `https://sepolia.etherscan.io/address/${address}`,
+  });
 });
 
 // ─── Debug ───

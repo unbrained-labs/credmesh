@@ -31,7 +31,7 @@ import type {
   TreasuryState,
   WaterfallResult,
 } from "./types";
-import { transferTokens, writeReputationAttestation, isChainEnabled } from "./chain";
+import { transferTokens, writeReputation, isChainEnabled } from "./chain";
 import { norm, rc } from "./utils";
 
 const DEFAULT_STATE: AgentState = {
@@ -433,20 +433,19 @@ export class CreditAgent extends DurableObject<Env> {
     );
     agent.updatedAt = Date.now();
 
-    // Write reputation attestation on-chain
+    // Write reputation to ReputationRegistry on-chain
     if (isChainEnabled(this.env)) {
       const hasDefault = activeAdvances.some((a) => a.status === "defaulted");
-      const score = hasDefault ? -1 : 1;
-      const attestType = hasDefault ? "partial_repayment" : "full_repayment";
-      const meta = JSON.stringify({
+      const score = hasDefault ? 1 : 10;
+      const evidence = JSON.stringify({
+        type: hasDefault ? "partial_repayment" : "full_repayment",
         jobId: job.id,
         payout: actualPayout,
         waterfall: waterfall.status,
         advances: activeAdvances.length,
+        source: "trustvault-credit",
       });
-      const txHash = await writeReputationAttestation(
-        this.env, agent.address, attestType, score, meta,
-      );
+      const txHash = await writeReputation(this.env, agent.address, score, evidence);
       if (txHash) {
         job.reputationTxHash = txHash;
       }
@@ -491,10 +490,16 @@ export class CreditAgent extends DurableObject<Env> {
       job.status = "defaulted";
     }
 
-    // Write negative reputation on-chain
+    // Write default event to ReputationRegistry (score 0 = negative signal)
     if (isChainEnabled(this.env)) {
-      const meta = JSON.stringify({ advanceId: advance.id, amount: advance.approvedAmount, reason: input.reason });
-      await writeReputationAttestation(this.env, agent.address, "default", -2, meta);
+      const evidence = JSON.stringify({
+        type: "default",
+        advanceId: advance.id,
+        amount: advance.approvedAmount,
+        reason: input.reason,
+        source: "trustvault-credit",
+      });
+      await writeReputation(this.env, agent.address, 0, evidence);
     }
 
     this.pushEvent("advance_defaulted", agent.address, `Advance $${advance.approvedAmount.toFixed(2)} defaulted: ${input.reason}`, {
