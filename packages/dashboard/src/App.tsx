@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type PortfolioReport, type RiskReport, type TreasuryState, type TimelineEvent } from './api';
 import { Header } from './components/Header';
+import { Footer } from './components/Footer';
 import { StatsRow } from './components/StatsRow';
 import { RiskGauge } from './components/RiskGauge';
 import { ExposureChart } from './components/ExposureChart';
@@ -47,19 +48,20 @@ export default function App() {
 
   if (loading && !portfolio) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-bg">
         <div className="text-center">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-text-muted font-mono text-sm">Connecting to TrustVault Credit...</p>
+          <p className="text-text-muted text-xs">
+            &gt; connecting to trustvault-credit...<span className="animate-blink">|</span>
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-bg">
       <Header />
-      <main className="max-w-7xl mx-auto px-4 py-6 space-y-5">
+      <main className="max-w-7xl mx-auto px-4 py-4 space-y-4">
         <DemoControls onAction={onDemo} loading={loading} />
         {portfolio && <StatsRow summary={portfolio.summary} />}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -73,6 +75,7 @@ export default function App() {
         </div>
         <Timeline events={timeline} />
       </main>
+      <Footer />
     </div>
   );
 }

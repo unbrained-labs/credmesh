@@ -1,32 +1,32 @@
 import type { PortfolioReport } from '../api';
 import { Card } from './Card';
 
-function scoreColor(s: number) { return s >= 70 ? 'text-credit-green' : s >= 40 ? 'text-credit-amber' : 'text-credit-red'; }
-function scoreBg(s: number) { return s >= 70 ? 'bg-credit-green/10' : s >= 40 ? 'bg-credit-amber/10' : 'bg-credit-red/10'; }
+function scoreColor(s: number) { return s >= 70 ? 'text-green' : s >= 40 ? 'text-amber' : 'text-red'; }
 
 export function TopBorrowers({ borrowers }: { borrowers: PortfolioReport['topBorrowers'] }) {
   if (!borrowers.length) {
-    return <Card title="Top Borrowers"><div className="h-48 flex items-center justify-center text-text-muted text-sm">No borrowing history</div></Card>;
+    return <Card title="Top Borrowers"><div className="h-48 flex items-center justify-center text-text-muted text-xs">&gt; no borrowing history_</div></Card>;
   }
 
   return (
     <Card title="Top Borrowers">
-      <div className="space-y-3">
+      <div className="space-y-0">
+        {/* Table header */}
+        <div className="grid grid-cols-[1fr_80px_80px_60px] gap-2 text-[9px] text-text-muted uppercase tracking-wider pb-2 border-b border-border">
+          <span>agent</span>
+          <span className="text-right">borrowed</span>
+          <span className="text-right">score</span>
+          <span className="text-right">repay</span>
+        </div>
         {borrowers.map(b => (
-          <div key={b.address} className="flex items-center justify-between p-3 rounded-lg bg-surface-2 border border-border">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${scoreBg(b.creditScore)}`}>
-                <span className={`text-sm font-bold font-mono ${scoreColor(b.creditScore)}`}>{b.creditScore}</span>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-text">{b.name}</p>
-                <p className="text-[10px] font-mono text-text-muted">{b.address.slice(0, 24)}...</p>
-              </div>
+          <div key={b.address} className="grid grid-cols-[1fr_80px_80px_60px] gap-2 py-2 border-b border-border text-xs hover:bg-surface-2 transition-colors">
+            <div className="truncate">
+              <span className="text-white">{b.name}</span>
+              <span className="text-text-muted ml-1 text-[9px]">{b.address.slice(0, 12)}..</span>
             </div>
-            <div className="text-right">
-              <p className="text-sm font-mono text-text">${b.totalBorrowed.toFixed(2)}</p>
-              <p className="text-[10px] text-text-muted">{(b.repaymentRate * 100).toFixed(0)}% repaid</p>
-            </div>
+            <span className="text-right text-white">${b.totalBorrowed.toFixed(2)}</span>
+            <span className={`text-right font-bold ${scoreColor(b.creditScore)}`}>{b.creditScore}</span>
+            <span className="text-right text-text-muted">{(b.repaymentRate * 100).toFixed(0)}%</span>
           </div>
         ))}
       </div>

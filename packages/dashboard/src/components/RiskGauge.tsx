@@ -1,49 +1,53 @@
 import type { RiskReport } from '../api';
 import { Card } from './Card';
 
-const riskColors: Record<string, string> = {
-  LOW: 'text-credit-green', MODERATE: 'text-credit-amber', HIGH: 'text-credit-red', CRITICAL: 'text-credit-red',
-};
-const riskGlow: Record<string, string> = {
-  LOW: 'shadow-[0_0_30px_rgba(34,197,94,0.15)]', MODERATE: 'shadow-[0_0_30px_rgba(245,158,11,0.15)]',
-  HIGH: 'shadow-[0_0_30px_rgba(239,68,68,0.15)]', CRITICAL: 'shadow-[0_0_30px_rgba(239,68,68,0.25)]',
+const riskColor: Record<string, string> = {
+  LOW: 'text-green', MODERATE: 'text-amber', HIGH: 'text-red', CRITICAL: 'text-red',
 };
 
 export function RiskGauge({ risk }: { risk: RiskReport }) {
   const pct = risk.healthScore;
-  const circ = 2 * Math.PI * 54;
-  const offset = circ * (1 - pct / 100);
-  const stroke = pct >= 80 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
+  const barWidth = `${pct}%`;
+  const barColor = pct >= 80 ? 'bg-green' : pct >= 60 ? 'bg-amber' : 'bg-red';
 
   return (
-    <Card title="Portfolio Health" className={riskGlow[risk.overallRisk]}>
-      <div className="flex flex-col items-center">
-        <div className="relative w-32 h-32">
-          <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
-            <circle cx="60" cy="60" r="54" fill="none" stroke="#252536" strokeWidth="8" />
-            <circle cx="60" cy="60" r="54" fill="none" stroke={stroke} strokeWidth="8"
-              strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset}
-              className="transition-all duration-1000" />
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-3xl font-bold font-mono">{pct}</span>
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">score</span>
-          </div>
+    <Card title="Portfolio Health">
+      <div className="space-y-4">
+        {/* Score display */}
+        <div className="text-center">
+          <span className="text-4xl font-bold text-white">{pct}</span>
+          <span className="text-text-muted text-sm ml-1">/100</span>
         </div>
-        <span className={`text-sm font-bold uppercase tracking-wider mt-3 ${riskColors[risk.overallRisk]}`}>
-          {risk.overallRisk} RISK
-        </span>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-4 text-xs">
-          <span className="text-text-muted">Utilization</span>
-          <span className="text-right font-mono">{(risk.metrics.utilizationRate * 100).toFixed(0)}%</span>
-          <span className="text-text-muted">Default Rate</span>
-          <span className="text-right font-mono">{(risk.metrics.weightedDefaultRate * 100).toFixed(1)}%</span>
-          <span className="text-text-muted">Overdue</span>
-          <span className="text-right font-mono">{risk.metrics.overdueCount}</span>
-          <span className="text-text-muted">Concentration</span>
-          <span className="text-right font-mono">{(risk.concentrationRisk * 100).toFixed(0)}%</span>
+
+        {/* Progress bar */}
+        <div className="h-2 bg-border-bright">
+          <div className={`h-full ${barColor} transition-all duration-1000`} style={{ width: barWidth }} />
+        </div>
+
+        {/* Risk label */}
+        <div className="text-center">
+          <span className={`text-xs font-bold uppercase tracking-[0.2em] ${riskColor[risk.overallRisk]}`}>
+            {risk.overallRisk} RISK
+          </span>
+        </div>
+
+        {/* Metrics grid */}
+        <div className="space-y-1.5 text-[11px] border-t border-border pt-3">
+          <Row label="utilization" value={`${(risk.metrics.utilizationRate * 100).toFixed(0)}%`} />
+          <Row label="default_rate" value={`${(risk.metrics.weightedDefaultRate * 100).toFixed(1)}%`} />
+          <Row label="overdue" value={String(risk.metrics.overdueCount)} />
+          <Row label="concentration" value={`${(risk.concentrationRisk * 100).toFixed(0)}%`} />
         </div>
       </div>
     </Card>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-text-muted">{label}</span>
+      <span className="text-white">{value}</span>
+    </div>
   );
 }

@@ -1,40 +1,33 @@
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card } from './Card';
 
-const COLORS = ['#6366f1', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
-
 export function ExposureChart({ exposure }: { exposure: Record<string, number> }) {
-  const data = Object.entries(exposure).map(([name, value]) => ({ name, value }));
-  const total = data.reduce((s, d) => s + d.value, 0);
+  const data = Object.entries(exposure).map(([name, value]) => ({ name: name.toUpperCase(), value }));
 
   if (!data.length) {
-    return <Card title="Exposure by Category"><div className="h-48 flex items-center justify-center text-text-muted text-sm">No active exposure</div></Card>;
+    return (
+      <Card title="Exposure by Category">
+        <div className="h-48 flex items-center justify-center text-text-muted text-xs">
+          &gt; no active exposure_
+        </div>
+      </Card>
+    );
   }
 
   return (
     <Card title="Exposure by Category">
-      <div className="flex items-center gap-6">
-        <ResponsiveContainer width="50%" height={200}>
-          <PieChart>
-            <Pie data={data} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value" strokeWidth={0}>
-              {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-            </Pie>
-            <Tooltip contentStyle={{ background: '#10101a', border: '1px solid #252536', borderRadius: '8px', fontSize: 12, color: '#e4e4ef' }}
-              formatter={(v: number) => [`$${v.toFixed(2)}`, '']} />
-          </PieChart>
-        </ResponsiveContainer>
-        <div className="flex-1 space-y-2">
-          {data.map((d, i) => (
-            <div key={d.name} className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
-                <span className="text-text-muted capitalize">{d.name}</span>
-              </div>
-              <span className="font-mono text-text">${d.value.toFixed(2)} <span className="text-text-muted">({total > 0 ? ((d.value / total) * 100).toFixed(0) : 0}%)</span></span>
-            </div>
-          ))}
-        </div>
-      </div>
+      <ResponsiveContainer width="100%" height={200}>
+        <BarChart data={data} layout="vertical" margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+          <XAxis type="number" tick={{ fill: '#666', fontSize: 9, fontFamily: 'JetBrains Mono' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
+          <YAxis type="category" dataKey="name" tick={{ fill: '#666', fontSize: 9, fontFamily: 'JetBrains Mono' }} axisLine={false} tickLine={false} width={120} />
+          <Tooltip
+            contentStyle={{ background: '#0a0a0a', border: '1px solid #333', borderRadius: 0, fontSize: 11, fontFamily: 'JetBrains Mono', color: '#e0e0e0' }}
+            formatter={(v: number) => [`$${v.toFixed(2)}`, '']}
+            cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+          />
+          <Bar dataKey="value" fill="#00ff41" radius={0} />
+        </BarChart>
+      </ResponsiveContainer>
     </Card>
   );
 }
