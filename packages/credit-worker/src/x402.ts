@@ -62,7 +62,7 @@ export function paymentInstructions(config: X402Config, amount: number, descript
     facilitatorUrl: config.facilitatorUrl,
     payTo: config.payToAddress,
     maxAmountRequired: String(Math.ceil(amount * 1e6)), // USDC has 6 decimals
-    asset: USDC_ADDRESSES.baseSepolia,
+    asset: config.network === X402_NETWORKS.baseMainnet ? USDC_ADDRESSES.baseMainnet : USDC_ADDRESSES.baseSepolia,
     description,
     mimeType: "application/json",
     extra: {

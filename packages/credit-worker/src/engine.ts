@@ -386,7 +386,10 @@ export class CreditAgent extends DurableObject<Env> {
     const job = this.requireJob(input.jobId);
     if (job.status !== "open") throw new Error("Job is not open.");
 
-    const actualPayout = rc(input.actualPayout ?? job.expectedPayout);
+    // Clamp payout to 2x expected to prevent inflated repayment history
+    const maxPayout = rc(job.expectedPayout * 2);
+    const rawPayout = rc(Math.max(0, input.actualPayout ?? job.expectedPayout));
+    const actualPayout = rc(Math.min(rawPayout, maxPayout));
     job.status = "completed";
     job.completedAt = Date.now();
     job.actualPayout = actualPayout;

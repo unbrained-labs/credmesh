@@ -7,7 +7,7 @@ import { checkIdentityRegistration } from "./erc8004";
 import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens } from "./chain";
 import { authMiddleware } from "./auth";
 import { computeFee, PROTOCOL_FEE_BPS } from "./pricing";
-import { positiveNumber, boundedString } from "./validate";
+import { positiveNumber, boundedString, ethAddress } from "./validate";
 import { getX402Config, paymentInstructions } from "./x402";
 import type { AgentRegistrationInput, Env, SpendCategory, TimelineEvent } from "./types";
 
@@ -311,21 +311,34 @@ app.get("/demo/scenarios", (c) => {
 
 const FAUCET_AMOUNT = 100; // 100 tUSDC per drip
 const FAUCET_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
-const faucetLastDrip = new Map<string, number>();
+const TESTNET_CHAIN_IDS = ["11155111", "84532"]; // Sepolia, Base Sepolia
+const faucetLastDrip = new Map<string, number>(); // In-memory (acceptable for testnet)
 
 app.post("/faucet/:address", async (c) => {
-  const address = c.req.param("address").toLowerCase();
+  // Validate address format
+  let address: string;
+  try { address = ethAddress(c.req.param("address"), "address"); }
+  catch { return c.json({ error: "Invalid Ethereum address (0x + 40 hex chars)." }, 400); }
+  if (address === "0x0000000000000000000000000000000000000000") {
+    return c.json({ error: "Cannot mint to zero address." }, 400);
+  }
 
-  // Rate limit
+  // Testnet guard — only allow on known testnets
+  const chainId = c.env.CHAIN_ID ?? "";
+  if (chainId && !TESTNET_CHAIN_IDS.includes(chainId)) {
+    return c.json({ error: "Faucet is only available on testnets." }, 403);
+  }
+
+  if (!isChainEnabled(c.env)) {
+    return c.json({ error: "Chain not configured." }, 503);
+  }
+
+  // Rate limit (in-memory — resets on cold start, acceptable for testnet)
   const lastDrip = faucetLastDrip.get(address) ?? 0;
   const now = Date.now();
   if (now - lastDrip < FAUCET_COOLDOWN_MS) {
     const waitMinutes = Math.ceil((FAUCET_COOLDOWN_MS - (now - lastDrip)) / 60000);
     return c.json({ error: `Rate limited. Try again in ${waitMinutes} minutes.` }, 429);
-  }
-
-  if (!isChainEnabled(c.env)) {
-    return c.json({ error: "Chain not configured." }, 503);
   }
 
   const result = await mintTestTokens(c.env, address, FAUCET_AMOUNT);
@@ -414,33 +427,42 @@ app.get("/bootstrap", (c) => {
 
 app.post("/marketplace/jobs/:jobId/pay", async (c) => {
   const jobId = c.req.param("jobId");
-  const { actualPayout } = await c.req.json<{ actualPayout?: number }>().catch(() => ({ actualPayout: undefined }));
   const x402Config = getX402Config(c.env);
 
-  // If x402 is configured and no payment header present, return 402 with payment instructions
-  if (x402Config) {
-    const paymentHeader = c.req.header("x-payment") ?? c.req.header("payment-signature");
-    if (!paymentHeader) {
-      const amount = actualPayout ?? 100; // Default hint; real amount from job data
-      return c.json({
-        status: 402,
-        message: "Payment required. Use x402 protocol to authorize USDC transfer.",
-        paymentInstructions: paymentInstructions(x402Config, amount, `Pay for job ${jobId}`),
-        jobId,
-        note: "Sign a USDC transferWithAuthorization and re-send with x-payment header.",
-      }, 402);
-    }
-    // x402 payment header present — in production, the facilitator would have
-    // already settled the USDC on-chain. Proceed to complete the job.
+  // x402 not configured — return 501 with instructions on how to enable
+  if (!x402Config) {
+    return c.json({
+      error: "x402 payment not configured on this deployment.",
+      enableWith: "Set X402_FACILITATOR_URL and X402_PAY_TO environment variables.",
+      alternative: "Use POST /marketplace/jobs/:jobId/complete for direct settlement.",
+    }, 501);
   }
 
-  // Complete the job with the actual payout
-  const agent = getAgent(c.env);
-  const result = await agent.completeJob({ jobId, actualPayout });
+  // Check for x402 payment header
+  const paymentHeader = c.req.header("x-payment") ?? c.req.header("payment-signature");
+  if (!paymentHeader) {
+    // Return 402 with payment instructions — client must sign and re-send
+    return c.json({
+      status: 402,
+      message: "Payment required. Use x402 protocol to authorize USDC transfer.",
+      paymentInstructions: paymentInstructions(x402Config, 100, `Pay for job ${jobId}`),
+      jobId,
+      note: "Sign a USDC transferWithAuthorization and re-send with x-payment header. See https://x402.org for client SDKs.",
+    }, 402);
+  }
+
+  // Payment header present — verify with the facilitator before completing
+  // TODO: When deployed on Base with real USDC, call facilitator verify/settle:
+  //   const { verify, settle } = await import("@x402/core/server");
+  //   const verifyResult = await facilitator.verify(paymentPayload, requirements);
+  //   if (!verifyResult.isValid) return c.json({ error: "Payment verification failed." }, 402);
+  //   const settleResult = await facilitator.settle(paymentPayload, requirements);
+  // For now, reject — we cannot verify payment without a live facilitator
   return c.json({
-    ...result,
-    paymentMethod: x402Config ? "x402" : "direct",
-  });
+    error: "x402 payment verification not yet available on this network (Sepolia L1). Deploy on Base Sepolia to enable full x402 settlement.",
+    received: "Payment header detected but cannot be verified without Base facilitator.",
+    alternative: "Use POST /marketplace/jobs/:jobId/complete for direct settlement on Sepolia.",
+  }, 501);
 });
 
 // ─── Onchain ───
