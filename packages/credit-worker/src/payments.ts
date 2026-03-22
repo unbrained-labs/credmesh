@@ -11,8 +11,6 @@
  * on Cloudflare Workers.
  */
 
-import type { MiddlewareHandler } from "hono";
-
 /**
  * Supported payment methods for discovery.
  */
@@ -22,6 +20,8 @@ export function getPaymentMethods(env: {
   CREDIT_VAULT?: string;
   STRIPE_SECRET_KEY?: string;
   TEMPO_ACCOUNT?: string;
+  X402_FACILITATOR_URL?: string;
+  X402_PAY_TO?: string;
 }) {
   const methods = [];
 
@@ -63,7 +63,7 @@ export function getPaymentMethods(env: {
   methods.push({
     id: "x402",
     name: "x402 (Coinbase)",
-    status: "available-on-base",
+    status: env.X402_FACILITATOR_URL && env.X402_PAY_TO ? "active" : "available-on-base",
     description: "Gasless USDC payments via HTTP 402. Coinbase facilitator settles on-chain.",
     networks: ["eip155:84532", "eip155:8453"],
   });
@@ -84,33 +84,3 @@ export function getPaymentMethods(env: {
     },
   };
 }
-
-/**
- * Check if MPP is configured and available.
- */
-export function isMppConfigured(env: {
-  TEMPO_ACCOUNT?: string;
-  STRIPE_SECRET_KEY?: string;
-}): boolean {
-  return !!(env.TEMPO_ACCOUNT || env.STRIPE_SECRET_KEY);
-}
-
-/**
- * MPP integration example for agents.
- *
- * Server side (this worker):
- *   When TEMPO_ACCOUNT or STRIPE_SECRET_KEY is set, MPP endpoints
- *   accept mppx-compatible payment flows via HTTP 402.
- *
- * Client side (agent):
- *   ```ts
- *   import { Mppx, tempo } from 'mppx/client'
- *   const client = Mppx.create({ methods: [tempo()] })
- *   const res = await client.fetch('https://credit.unbrained.club/marketplace/jobs/123/complete', {
- *     method: 'POST',
- *     body: JSON.stringify({ paymentTxHash: '0x...' })
- *   })
- *   ```
- *
- * The mppx client automatically handles the 402 challenge flow.
- */
