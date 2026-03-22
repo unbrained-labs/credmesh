@@ -6,6 +6,7 @@ import { listScenarios } from "./demo";
 import { checkIdentityRegistration } from "./erc8004";
 import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance } from "./chain";
 import { authMiddleware } from "./auth";
+import { computeFee, PROTOCOL_FEE_BPS } from "./pricing";
 import type { AgentRegistrationInput, Env, SpendCategory, TimelineEvent } from "./types";
 
 export { CreditAgent };
@@ -206,6 +207,42 @@ app.get("/treasury", async (c) => {
   return c.json(await getAgent(c.env).getTreasury());
 });
 
+// ─── Fee Transparency ───
+
+app.get("/fees", async (c) => {
+  const agent = getAgent(c.env);
+  const treasury = await agent.getTreasury();
+  // Show current fee curve at sample amounts
+  const sampleAdvance = 20;
+  const sampleBreakdown = computeFee(sampleAdvance, 24, 1.0, 1.0, treasury);
+  const riskyBreakdown = computeFee(sampleAdvance, 24, 0.5, 0.7, treasury);
+
+  return c.json({
+    model: "dynamic-utilization",
+    protocolFeeBps: PROTOCOL_FEE_BPS,
+    protocolFeePercent: `${(PROTOCOL_FEE_BPS / 100).toFixed(1)}%`,
+    description: "Fees are computed dynamically from pool utilization (kink model), advance duration, agent risk, and pool loss history. Protocol retains a share for sustainability.",
+    currentPool: {
+      totalDeposited: treasury.totalDeposited,
+      totalAdvanced: treasury.totalAdvanced,
+      totalFeesEarned: treasury.totalFeesEarned,
+      underwriterFeesEarned: treasury.totalUnderwriterFees,
+      protocolFeesEarned: treasury.totalProtocolFees,
+      totalDefaultLoss: treasury.totalDefaultLoss,
+    },
+    exampleRates: {
+      bestCase: {
+        description: "Perfect agent, 24h advance, $20",
+        ...sampleBreakdown,
+      },
+      riskyCase: {
+        description: "50% repay rate, 70% completion, 24h advance, $20",
+        ...riskyBreakdown,
+      },
+    },
+  });
+});
+
 // ─── Spend Controls ───
 
 app.post("/spend/record", async (c) => {
@@ -282,7 +319,6 @@ app.get("/debug/state", async (c) => {
 });
 
 app.onError((error, c) => {
-  // Only expose known business-logic errors, not internal details
   const msg = error.message;
   const safe = msg.startsWith("Unknown ") || msg.startsWith("Job is ") || msg.startsWith("Advance is ")
     ? msg

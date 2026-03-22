@@ -54,6 +54,9 @@ export class CreditAgent extends DurableObject<Env> {
     this.state = stored ?? structuredClone(DEFAULT_STATE);
     if (!this.state.bids) this.state.bids = {};
     if (!this.state.treasury) this.state.treasury = { ...DEFAULT_TREASURY };
+    // Migrate treasury to include protocol fee tracking
+    if (this.state.treasury.totalProtocolFees === undefined) this.state.treasury.totalProtocolFees = 0;
+    if (this.state.treasury.totalUnderwriterFees === undefined) this.state.treasury.totalUnderwriterFees = 0;
     if (!this.state.spendRecords) this.state.spendRecords = {};
     if (!this.state.timeline) this.state.timeline = [];
     this.initialized = true;
@@ -133,11 +136,12 @@ export class CreditAgent extends DurableObject<Env> {
     await this.init();
     const profile = this.getProfileInternal(input.agentAddress);
     const job = this.requireOpenJob(input.jobId, norm(input.agentAddress));
-    const quote = quoteAdvance(profile, job, rc(input.requestedAmount), input.purpose);
+    const quote = quoteAdvance(profile, job, rc(input.requestedAmount), input.purpose, this.state.treasury);
     this.pushEvent("quote_issued", norm(input.agentAddress), `Quote: ${quote.decision} for $${quote.approvedAmount.toFixed(2)}.`, {
       decision: quote.decision,
       approvedAmount: quote.approvedAmount,
       requestedAmount: quote.requestedAmount,
+      feeRate: quote.feeBreakdown.effectiveRate,
     });
     await this.persist();
     return quote;
@@ -425,7 +429,7 @@ export class CreditAgent extends DurableObject<Env> {
       agent.outstandingBalance = rc(Math.max(0, agent.outstandingBalance - advanceDue));
     }
 
-    this.state.treasury = returnFunds(this.state.treasury, waterfall.principalRepaid, waterfall.feePaid);
+    this.state.treasury = returnFunds(this.state.treasury, waterfall.principalRepaid, waterfall.underwriterFeePaid, waterfall.protocolFeePaid);
 
     agent.successfulJobs += 1;
     agent.totalRepaid = rc(agent.totalRepaid + repaidTotal);
@@ -447,10 +451,10 @@ export class CreditAgent extends DurableObject<Env> {
       }
     }
 
-    // Record repayment in vault (updates share value for depositors)
+    // Record repayment in vault (only underwriter fees increase share value)
     if (this.env.CREDIT_VAULT && isChainEnabled(this.env)) {
-      if (waterfall.principalRepaid > 0 || waterfall.feePaid > 0) {
-        await vaultRecordRepayment(this.env, waterfall.principalRepaid, waterfall.feePaid);
+      if (waterfall.principalRepaid > 0 || waterfall.underwriterFeePaid > 0) {
+        await vaultRecordRepayment(this.env, waterfall.principalRepaid, waterfall.underwriterFeePaid);
       }
       if (waterfall.shortfall > 0) {
         await vaultRecordDefault(this.env, waterfall.shortfall);
@@ -791,7 +795,7 @@ export class CreditAgent extends DurableObject<Env> {
   }): CreditQuote {
     const profile = this.getProfileInternal(input.agentAddress);
     const job = this.requireOpenJob(input.jobId, norm(input.agentAddress));
-    return quoteAdvance(profile, job, rc(input.requestedAmount), input.purpose);
+    return quoteAdvance(profile, job, rc(input.requestedAmount), input.purpose, this.state.treasury);
   }
 
   private requireAgent(address: string): AgentRecord {

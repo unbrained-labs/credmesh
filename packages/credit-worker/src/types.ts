@@ -102,10 +102,26 @@ export interface CreditQuote {
   approvedAmount: number;
   requestedAmount: number;
   fee: number;
+  feeBreakdown: FeeBreakdown;
   maxDurationHours: number;
   confidence: number;
   reasons: string[];
   constraints: string[];
+}
+
+export interface FeeBreakdown {
+  totalFee: number;
+  effectiveRate: number;
+  underwriterFee: number;
+  protocolFee: number;
+  components: {
+    utilizationRate: number;
+    utilizationPremium: number;
+    durationPremium: number;
+    riskPremium: number;
+    poolLossSurcharge: number;
+    totalRate: number;
+  };
 }
 
 export interface AgentState {
@@ -167,6 +183,8 @@ export interface TreasuryState {
   totalAdvanced: number;
   totalRepaid: number;
   totalFeesEarned: number;
+  totalProtocolFees: number;
+  totalUnderwriterFees: number;
   totalDefaultLoss: number;
   availableFunds: number;
   deposits: TreasuryDeposit[];
@@ -184,6 +202,8 @@ export interface WaterfallResult {
   grossPayout: number;
   principalRepaid: number;
   feePaid: number;
+  underwriterFeePaid: number;
+  protocolFeePaid: number;
   penaltyApplied: number;
   agentNet: number;
   shortfall: number;

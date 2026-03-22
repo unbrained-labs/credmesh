@@ -22,7 +22,11 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(npm install:*)",
       "Bash(npx tsx:*)",
-      "Bash(git status:*)"
+      "Bash(git status:*)",
+      "Bash(BASE=\"https://trustvault-credit.leaidedev.workers.dev\")",
+      "Bash(python3 -c \"import json,sys; print\\(json.load\\(sys.stdin\\)[''''message'''']\\)\")",
+      "Bash(python3 -c \"import json,sys; print\\(''''Registered:'''', json.load\\(sys.stdin\\)[''''name'''']\\)\")",
+      "Bash(python3 -c \"import json,sys; print\\(json.dumps\\(json.load\\(sys.stdin\\), indent=2\\)\\)\")"
     ]
   }
 }

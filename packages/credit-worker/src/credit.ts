@@ -1,5 +1,6 @@
-import type { AgentRecord, CreditDecision, CreditProfile, CreditQuote, JobReceivable } from "./types";
+import type { AgentRecord, CreditDecision, CreditProfile, CreditQuote, JobReceivable, TreasuryState } from "./types";
 import { clamp, rc, repaymentRate as calcRepaymentRate, roundTo } from "./utils";
+import { computeFee } from "./pricing";
 
 const HARD_CAP = 100;
 const PAYOUT_ADVANCE_RATIO = 0.3;
@@ -44,6 +45,7 @@ export function quoteAdvance(
   job: JobReceivable,
   requestedAmount: number,
   purpose: string,
+  treasury: TreasuryState,
 ): CreditQuote {
   const reasons = [...profile.reasons];
   const constraints = [
@@ -59,8 +61,15 @@ export function quoteAdvance(
   const payoutCap = rc(job.expectedPayout * PAYOUT_ADVANCE_RATIO);
   const approvedAmount = rc(Math.min(requestedAmount, payoutCap, profile.availableCredit, HARD_CAP));
   const utilizationRatio = job.expectedPayout <= 0 ? 1 : approvedAmount / job.expectedPayout;
-  const baseFeeRate = 0.05 + (1 - profile.repaymentRate) * 0.05 + (1 - profile.completionRate) * 0.03;
-  const fee = rc(approvedAmount * baseFeeRate);
+
+  // Dynamic fee computation
+  const feeBreakdown = computeFee(
+    approvedAmount,
+    job.durationHours,
+    profile.repaymentRate,
+    profile.completionRate,
+    treasury,
+  );
 
   let decision: CreditDecision = "DECLINED";
   if (profile.creditScore >= 65 && approvedAmount >= requestedAmount && requestedAmount > 0) {
@@ -71,6 +80,7 @@ export function quoteAdvance(
 
   reasons.push(`Expected payout: $${job.expectedPayout.toFixed(2)}.`);
   reasons.push(`Advance capped at ${(PAYOUT_ADVANCE_RATIO * 100).toFixed(0)}% of expected payout.`);
+  reasons.push(`Fee rate: ${(feeBreakdown.effectiveRate * 100).toFixed(2)}% (utilization ${(feeBreakdown.components.utilizationRate * 100).toFixed(0)}%).`);
 
   if (profile.availableCredit <= 0) {
     reasons.push("No available credit remaining.");
@@ -101,7 +111,8 @@ export function quoteAdvance(
     decision,
     approvedAmount,
     requestedAmount,
-    fee,
+    fee: feeBreakdown.totalFee,
+    feeBreakdown,
     maxDurationHours: job.durationHours,
     confidence,
     reasons,

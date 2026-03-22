@@ -7,12 +7,15 @@ import type {
   WaterfallResult,
 } from "./types";
 import { rc } from "./utils";
+import { splitFee } from "./pricing";
 
 export const DEFAULT_TREASURY: TreasuryState = {
   totalDeposited: 0,
   totalAdvanced: 0,
   totalRepaid: 0,
   totalFeesEarned: 0,
+  totalProtocolFees: 0,
+  totalUnderwriterFees: 0,
   totalDefaultLoss: 0,
   availableFunds: 0,
   deposits: [],
@@ -62,13 +65,19 @@ export function reserveFunds(
 export function returnFunds(
   treasury: TreasuryState,
   principalRepaid: number,
-  feesEarned: number,
+  underwriterFees: number,
+  protocolFees: number,
 ): TreasuryState {
+  const totalFees = rc(underwriterFees + protocolFees);
   return {
     ...treasury,
     totalRepaid: rc(treasury.totalRepaid + principalRepaid),
-    totalFeesEarned: rc(treasury.totalFeesEarned + feesEarned),
-    availableFunds: rc(treasury.availableFunds + principalRepaid + feesEarned),
+    totalFeesEarned: rc(treasury.totalFeesEarned + totalFees),
+    totalUnderwriterFees: rc(treasury.totalUnderwriterFees + underwriterFees),
+    totalProtocolFees: rc(treasury.totalProtocolFees + protocolFees),
+    // Only principal + underwriter fees go back to the pool.
+    // Protocol fees are retained separately.
+    availableFunds: rc(treasury.availableFunds + principalRepaid + underwriterFees),
   };
 }
 
@@ -90,16 +99,22 @@ export function settleWaterfall(
   let remaining = rc(grossPayout);
   breakdown.push(`Gross payout received: $${grossPayout.toFixed(2)}`);
 
+  // Step 1: Repay principal
   const totalPrincipal = rc(advances.reduce((s, a) => s + a.approvedAmount, 0));
   const principalRepaid = rc(Math.min(remaining, totalPrincipal));
   remaining = rc(remaining - principalRepaid);
   breakdown.push(`Principal repaid: $${principalRepaid.toFixed(2)} of $${totalPrincipal.toFixed(2)}`);
 
+  // Step 2: Pay fees (total = underwriter + protocol)
   const totalFees = rc(advances.reduce((s, a) => s + a.fee, 0));
   const feePaid = rc(Math.min(remaining, totalFees));
   remaining = rc(remaining - feePaid);
-  breakdown.push(`Fees paid: $${feePaid.toFixed(2)} of $${totalFees.toFixed(2)}`);
 
+  // Split collected fees into underwriter + protocol portions
+  const { underwriterFee, protocolFee } = splitFee(feePaid);
+  breakdown.push(`Fees paid: $${feePaid.toFixed(2)} of $${totalFees.toFixed(2)} (underwriter: $${underwriterFee.toFixed(2)}, protocol: $${protocolFee.toFixed(2)})`);
+
+  // Step 3: Late penalties (also split)
   const now = Date.now();
   const overdueAdvances = advances.filter((a) => a.status === "active" && a.dueAt < now);
   let penaltyApplied = 0;
@@ -111,7 +126,8 @@ export function settleWaterfall(
     breakdown.push(`Late penalty (${overdueAdvances.length} overdue): $${penaltyApplied.toFixed(2)}`);
   }
 
-  const agentNet = rc(remaining);
+  // Step 4: Agent gets the rest
+  const agentNet = remaining;
   breakdown.push(`Agent net: $${agentNet.toFixed(2)}`);
 
   const totalDue = rc(totalPrincipal + totalFees);
@@ -134,6 +150,8 @@ export function settleWaterfall(
     grossPayout: rc(grossPayout),
     principalRepaid,
     feePaid,
+    underwriterFeePaid: underwriterFee,
+    protocolFeePaid: protocolFee,
     penaltyApplied,
     agentNet,
     shortfall,
