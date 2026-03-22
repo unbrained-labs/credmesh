@@ -10,6 +10,7 @@ import { computeFee, PROTOCOL_FEE_BPS } from "./pricing";
 import { positiveNumber, boundedString, ethAddress } from "./validate";
 import { getX402Config } from "./x402";
 import { getPaymentMethods } from "./payments";
+import { mppGate, isMppEnabled } from "./mpp";
 import type { AgentRegistrationInput, Env, PortfolioReport, RiskReport, SpendCategory, TimelineEvent, TreasuryState } from "./types";
 
 export { CreditAgent };
@@ -392,6 +393,49 @@ app.post("/marketplace/jobs/:jobId/complete", async (c) => {
       callerAddress,
     }),
   );
+});
+
+// ─── MPP-gated job completion (agent pays via mppx.fetch()) ───
+// When TEMPO_ACCOUNT or STRIPE_SECRET_KEY is set, this route gates
+// job completion behind a real MPP payment. Agents using mppx.fetch()
+// handle the 402 challenge automatically.
+
+app.post("/marketplace/jobs/:jobId/pay-mpp", async (c, next) => {
+  // Dynamic MPP gate: read the job to determine the payment amount
+  if (!isMppEnabled(c.env as import("./types").Env)) {
+    return c.json({
+      error: "MPP not configured. Set TEMPO_ACCOUNT or STRIPE_SECRET_KEY.",
+      alternative: "POST /marketplace/jobs/:jobId/complete with paymentTxHash",
+    }, 501);
+  }
+
+  // Get job payout to set the charge amount
+  const jobId = c.req.param("jobId");
+  const agent = getAgent(c.env);
+  const snapshot = await agent.getSnapshot();
+  const jobs = (snapshot as Record<string, unknown>).jobs as Record<string, { expectedPayout: number; status: string }> | undefined;
+  const job = jobs?.[jobId];
+  if (!job) return c.json({ error: `Unknown job: ${jobId}` }, 404);
+  if (job.status !== "open") return c.json({ error: "Job is not open." }, 400);
+
+  // Apply MPP payment gate with the job's expected payout
+  const gate = mppGate(String(job.expectedPayout));
+  return gate(c, next);
+}, async (c) => {
+  // If we reach here, MPP has verified and settled the payment
+  const jobId = c.req.param("jobId");
+  const callerAddress = c.get("verifiedAddress");
+  const agent = getAgent(c.env);
+
+  const result = await agent.completeJob({
+    jobId,
+    callerAddress: callerAddress ?? "system",
+  });
+
+  return c.json({
+    ...result,
+    paymentMethod: "mpp",
+  });
 });
 
 // ─── Marketplace: Bidding ───

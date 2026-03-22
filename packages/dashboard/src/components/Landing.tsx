@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Card } from './Card';
 import { DepositFlow } from './DepositFlow';
-import type { HealthResponse } from '../api';
+import type { HealthResponse, PaymentMethods } from '../api';
+import { api } from '../api';
 
 interface UseCase {
   name: string;
@@ -26,10 +27,12 @@ const BASE = import.meta.env.PROD ? 'https://credit.unbrained.club' : '/api';
 
 export function Landing({ vault }: { vault: HealthResponse['vault'] | null }) {
   const [data, setData] = useState<UseCasesData | null>(null);
+  const [payments, setPayments] = useState<PaymentMethods | null>(null);
   const [tab, setTab] = useState<'agents' | 'lps'>('agents');
 
   useEffect(() => {
     fetch(`${BASE}/use-cases`).then(r => r.json()).then(setData).catch(() => {});
+    api.paymentMethods().then(setPayments).catch(() => {});
   }, []);
 
   if (!data) return null;
@@ -57,14 +60,34 @@ export function Landing({ vault }: { vault: HealthResponse['vault'] | null }) {
       </div>
 
       {tab === 'agents' && (
-        <Card title={data.forAgents.headline}>
-          <p className="text-[11px] text-text-muted leading-relaxed mb-4">{data.forAgents.description}</p>
-          <div className="space-y-3">
-            {data.forAgents.examples.map((ex) => (
-              <UseCaseCard key={ex.name} useCase={ex} />
-            ))}
-          </div>
-        </Card>
+        <div className="space-y-4">
+          <Card title={data.forAgents.headline}>
+            <p className="text-[11px] text-text-muted leading-relaxed mb-4">{data.forAgents.description}</p>
+            <div className="space-y-3">
+              {data.forAgents.examples.map((ex) => (
+                <UseCaseCard key={ex.name} useCase={ex} />
+              ))}
+            </div>
+          </Card>
+
+          {payments && (
+            <Card title="Payment Rails">
+              <p className="text-[10px] text-text-muted mb-3">Job posters and agents can pay via multiple rails. Agents use <span className="text-green font-bold">{payments.agentIntegration.recommended}</span> ({payments.agentIntegration.install}).</p>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                {payments.methods.map((m) => (
+                  <div key={m.id} className="bg-bg border border-border p-2">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className={`w-1.5 h-1.5 rounded-full ${m.status === 'active' ? 'bg-green' : m.status === 'configurable' ? 'bg-amber' : 'bg-text-muted'}`} />
+                      <span className="text-[9px] uppercase tracking-widest text-text-muted">{m.status}</span>
+                    </div>
+                    <p className="text-[10px] font-bold text-white">{m.name}</p>
+                    <p className="text-[9px] text-text-muted mt-0.5">{m.description.slice(0, 80)}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
       )}
 
       {tab === 'lps' && (

@@ -112,12 +112,20 @@ export interface TimelineEvent {
   actor: string; description: string; data: Record<string, unknown>;
 }
 
+export interface PaymentMethods {
+  description: string;
+  methods: Array<{ id: string; name: string; status: string; description: string; networks?: string[] }>;
+  agentIntegration: { recommended: string; install: string; usage: string; docs: string };
+  lpIntegration: { dashboard: string; api: string; vault: string };
+}
+
 export const api = {
   portfolio: () => get<PortfolioReport>('/dashboard/portfolio'),
   risk: () => get<RiskReport>('/dashboard/risk'),
   treasury: () => get<TreasuryState>('/treasury'),
   health: () => get<HealthResponse>('/health'),
   fees: () => get<FeeInfo>('/fees'),
+  paymentMethods: () => get<PaymentMethods>('/payment/methods'),
   timeline: (limit = 30) => get<TimelineEvent[]>(`/timeline?limit=${limit}`),
   bootstrap: (scenario: 'happy' | 'failure' | 'both') =>
     post<{ summary: string }>('/demo/bootstrap', { scenario }),
