@@ -101,13 +101,14 @@ app.get("/use-cases", (c) => {
         risk: "Default risk. Mitigated by: receivable-backed advances (30% max of job payout), credit scoring, reputation history, and the pool loss surcharge that rebuilds reserves.",
       },
       howToDeposit: {
-        step1: "Get tUSDC from the faucet (testnet) or hold USDC (mainnet)",
-        step2: "Approve the vault contract to spend your USDC",
-        step3: "Call vault.deposit(amount, yourAddress) — receive tvCREDIT shares",
-        step4: "Watch your share price increase as fees accumulate",
-        step5: "Withdraw anytime: vault.withdraw(shares, yourAddress, yourAddress)",
+        step1: "Go to https://trustvault-dashboard.pages.dev",
+        step2: "Click 'Connect Wallet' in the Vault panel",
+        step3: "Enter amount → Deposit (wallet handles approve + deposit in one flow)",
+        step4: "Receive tvCREDIT shares — share price increases as fees accumulate",
+        step5: "Withdraw anytime from the same panel",
       },
-      currentVault: "Check https://credit.unbrained.club/health for live vault stats (share price, total assets, fees earned)",
+      faucet: "Need testnet tUSDC? POST https://credit.unbrained.club/faucet/0xYourAddress",
+      currentVault: "Live stats: https://credit.unbrained.club/health",
     },
   });
 });
