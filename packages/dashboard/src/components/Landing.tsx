@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card } from './Card';
+import { DepositFlow } from './DepositFlow';
+import type { HealthResponse } from '../api';
 
 interface UseCase {
   name: string;
@@ -22,7 +24,7 @@ interface UseCasesData {
 
 const BASE = import.meta.env.PROD ? 'https://credit.unbrained.club' : '/api';
 
-export function Landing() {
+export function Landing({ vault }: { vault: HealthResponse['vault'] | null }) {
   const [data, setData] = useState<UseCasesData | null>(null);
   const [tab, setTab] = useState<'agents' | 'lps'>('agents');
 
@@ -66,39 +68,30 @@ export function Landing() {
       )}
 
       {tab === 'lps' && (
-        <Card title={data.forLPs.headline}>
-          <p className="text-[11px] text-text-muted leading-relaxed mb-4">{data.forLPs.description}</p>
-
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <div className="bg-bg border border-border p-3">
-              <p className="text-[9px] uppercase tracking-widest text-text-muted mb-1">Estimated APY</p>
-              <p className="text-xl font-bold text-cyan">{data.forLPs.yield.estimatedAPY}</p>
-              <p className="text-[10px] text-text-muted mt-1">{data.forLPs.yield.source}</p>
-            </div>
-            <div className="bg-bg border border-border p-3">
-              <p className="text-[9px] uppercase tracking-widest text-text-muted mb-1">vs Aave</p>
-              <p className="text-[11px] text-text-muted leading-relaxed">{data.forLPs.yield.comparison}</p>
-            </div>
-          </div>
-
-          <div className="border-t border-border pt-3">
-            <p className="text-[9px] uppercase tracking-widest text-text-muted mb-2">How to deposit</p>
-            <div className="space-y-1.5">
-              {Object.entries(data.forLPs.howToDeposit).map(([step, desc]) => (
-                <div key={step} className="flex gap-2 text-[11px]">
-                  <span className="text-green font-bold shrink-0">{step.replace('step', '')}.</span>
-                  <span className="text-text-muted">{desc}</span>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card title={data.forLPs.headline}>
+              <p className="text-[11px] text-text-muted leading-relaxed mb-4">{data.forLPs.description}</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-bg border border-border p-3">
+                  <p className="text-[9px] uppercase tracking-widest text-text-muted mb-1">Estimated APY</p>
+                  <p className="text-xl font-bold text-cyan">{data.forLPs.yield.estimatedAPY}</p>
+                  <p className="text-[10px] text-text-muted mt-1">{data.forLPs.yield.source}</p>
                 </div>
-              ))}
-            </div>
+                <div className="bg-bg border border-border p-3">
+                  <p className="text-[9px] uppercase tracking-widest text-text-muted mb-1">vs Aave</p>
+                  <p className="text-[11px] text-text-muted leading-relaxed">{data.forLPs.yield.comparison}</p>
+                </div>
+              </div>
+              <div className="border-t border-border pt-3 mt-3">
+                <p className="text-[10px] text-text-muted">
+                  Risk: <span className="text-amber">{data.forLPs.yield.risk}</span>
+                </p>
+              </div>
+            </Card>
+            <DepositFlow vault={vault} />
           </div>
-
-          <div className="border-t border-border pt-3 mt-3">
-            <p className="text-[10px] text-text-muted">
-              Risk: <span className="text-amber">{data.forLPs.yield.risk}</span>
-            </p>
-          </div>
-        </Card>
+        </div>
       )}
     </div>
   );

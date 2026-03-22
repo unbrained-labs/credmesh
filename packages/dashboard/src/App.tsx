@@ -14,7 +14,6 @@ import { Terminal } from './components/Terminal';
 import { VaultPanel } from './components/VaultPanel';
 import { FeePanel } from './components/FeePanel';
 import { Landing } from './components/Landing';
-import { DepositFlow } from './components/DepositFlow';
 
 export default function App() {
   const [portfolio, setPortfolio] = useState<PortfolioReport | null>(null);
@@ -67,7 +66,7 @@ export default function App() {
     <div className="min-h-screen bg-bg">
       <Header />
       <main className="max-w-7xl mx-auto px-4 py-4 space-y-4">
-        <Landing />
+        <Landing vault={health?.vault ?? null} />
         <DemoControls onAction={onDemo} loading={loading} />
         {portfolio && <StatsRow summary={portfolio.summary} />}
 
@@ -76,16 +75,13 @@ export default function App() {
           <Timeline events={timeline} />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <DepositFlow vault={health?.vault ?? null} />
-          {health && <VaultPanel vault={health.vault} chain={health.chain} />}
-        </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {risk && <RiskGauge risk={risk} />}
           {treasury && portfolio && <WaterfallChart treasury={treasury} totalExposure={portfolio.summary.totalExposure} />}
-          <FeePanel fees={fees} />
+          {health && <VaultPanel vault={health.vault} chain={health.chain} />}
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <FeePanel fees={fees} />
           {risk && <AlertsPanel alerts={risk.alerts} recommendations={risk.recommendations} />}
           {portfolio && <ExposureChart exposure={portfolio.exposureByCategory} />}
         </div>
