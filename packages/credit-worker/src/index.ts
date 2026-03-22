@@ -140,6 +140,115 @@ app.get("/health", async (c) => {
   });
 });
 
+// ─── Vault (LP agents) ───
+
+app.get("/vault/opportunity", async (c) => {
+  const vaultStats = c.env.CREDIT_VAULT ? await getVaultStats(c.env) : null;
+  const agent = getAgent(c.env);
+  const treasury = await agent.getTreasury() as import("./types").TreasuryState;
+  const portfolio = await agent.getPortfolio() as import("./types").PortfolioReport;
+  const risk = await agent.getRisk() as import("./types").RiskReport;
+
+  const totalAdvances = portfolio.summary.totalAdvances;
+  const avgFeeRate = treasury.totalFeesEarned > 0 && treasury.totalAdvanced > 0
+    ? treasury.totalFeesEarned / treasury.totalAdvanced
+    : 0.05;
+  // Rough APY estimate: fee rate * annual turnover of capital
+  // If average advance duration is ~24h, capital turns over ~365x/year
+  // Adjusted by utilization (not all capital is deployed at once)
+  const utilization = treasury.totalDeposited > 0
+    ? (treasury.totalAdvanced - treasury.totalRepaid) / treasury.totalDeposited
+    : 0;
+  const estimatedAPY = avgFeeRate * 365 * Math.max(utilization, 0.1);
+
+  return c.json({
+    type: "yield-opportunity",
+    protocol: "TrustVault Credit",
+    asset: "tUSDC",
+    network: "eip155:11155111",
+    vault: {
+      standard: "ERC-4626",
+      shareToken: "tvCREDIT",
+      sharePrice: vaultStats?.sharePrice ?? "1.000000",
+      totalAssets: vaultStats?.totalAssets ?? "0",
+      totalShares: vaultStats?.totalShares ?? "0",
+      feesEarned: vaultStats?.feesEarned ?? "0",
+      defaultLoss: vaultStats?.defaultLoss ?? "0",
+    },
+    yield: {
+      currentFeeRate: `${(avgFeeRate * 100).toFixed(2)}%`,
+      estimatedAPY: `${(estimatedAPY * 100).toFixed(1)}%`,
+      source: "Credit fees from agent advances (85% of fees go to depositors)",
+      protocolTake: "15%",
+    },
+    risk: {
+      level: risk.overallRisk,
+      healthScore: risk.healthScore,
+      defaultRate: `${(portfolio.summary.defaultRate * 100).toFixed(1)}%`,
+      utilizationRate: `${(utilization * 100).toFixed(1)}%`,
+      maxAdvanceRatio: "30% of job payout (receivable-backed)",
+      mitigations: [
+        "Advances capped at 30% of expected job payout",
+        "Dynamic fees increase with pool utilization (kink model)",
+        "Pool loss surcharge rebuilds reserves after defaults",
+        "Credit scoring reduces exposure to risky borrowers",
+      ],
+    },
+    pool: {
+      totalDeposited: treasury.totalDeposited,
+      totalAdvanced: treasury.totalAdvanced,
+      totalRepaid: treasury.totalRepaid,
+      totalFeesEarned: treasury.totalFeesEarned,
+      totalDefaultLoss: treasury.totalDefaultLoss,
+      activeAdvances: portfolio.summary.activeAdvances,
+      totalBorrowers: portfolio.summary.totalAgents,
+    },
+    howToDeposit: {
+      description: "Approve tUSDC to the vault contract, then call deposit(). Standard ERC-4626 flow.",
+      tokenContract: c.env.TEST_USDC ?? "not configured",
+      vaultContract: c.env.CREDIT_VAULT ?? "not configured",
+      steps: [
+        { action: "approve", target: "token", method: "approve(vaultAddress, amount)", description: "Allow vault to pull your tUSDC" },
+        { action: "deposit", target: "vault", method: "deposit(amount, yourAddress)", description: "Deposit tUSDC, receive tvCREDIT shares" },
+      ],
+      withdraw: { method: "redeem(shares, yourAddress, yourAddress)", description: "Burn tvCREDIT shares, receive tUSDC (including accrued yield)" },
+      abi: {
+        deposit: "function deposit(uint256 assets, address receiver) returns (uint256 shares)",
+        redeem: "function redeem(uint256 shares, address receiver, address owner) returns (uint256 assets)",
+        approve: "function approve(address spender, uint256 amount) returns (bool)",
+      },
+    },
+    monitor: {
+      vaultStats: "/health",
+      feeModel: "/fees",
+      portfolioRisk: "/dashboard/risk",
+      position: "/vault/position/{yourAddress}",
+    },
+  });
+});
+
+app.get("/vault/position/:address", async (c) => {
+  const address = c.req.param("address");
+  const vaultStats = c.env.CREDIT_VAULT ? await getVaultStats(c.env) : null;
+  const tokenBalance = await getTokenBalance(c.env, address);
+
+  // Read vault shares for this address
+  // Note: we can't read individual balances without indexing, so we show pool-level stats
+  const sharePrice = vaultStats ? parseFloat(vaultStats.sharePrice) : 1;
+
+  return c.json({
+    address,
+    tokenBalance: tokenBalance ? `${tokenBalance} tUSDC` : null,
+    vault: {
+      sharePrice: vaultStats?.sharePrice ?? "1.000000",
+      totalAssets: vaultStats?.totalAssets ?? "0",
+      feesEarned: vaultStats?.feesEarned ?? "0",
+    },
+    note: "To check your vault share balance, call balanceOf(yourAddress) on the vault contract directly. Share value = shares * sharePrice.",
+    explorer: `https://sepolia.etherscan.io/address/${address}`,
+  });
+});
+
 // ─── Agent Registration ───
 
 app.post("/agents/register", async (c) => {
