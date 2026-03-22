@@ -135,6 +135,24 @@ contract CreditVault is ERC4626, Ownable, ReentrancyGuard {
         emit AaveWithdrawn(amount);
     }
 
+    // ─── Withdrawal Safety ───
+
+    /// @notice Override maxWithdraw to only allow idle (liquid) capital
+    function maxWithdraw(address owner) public view override returns (uint256) {
+        uint256 idle = IERC20(asset()).balanceOf(address(this));
+        uint256 ownerAssets = convertToAssets(balanceOf(owner));
+        return idle < ownerAssets ? idle : ownerAssets;
+    }
+
+    /// @notice Override maxRedeem to only allow shares redeemable from idle capital
+    function maxRedeem(address owner) public view override returns (uint256) {
+        uint256 idle = IERC20(asset()).balanceOf(address(this));
+        uint256 ownerShares = balanceOf(owner);
+        uint256 maxAssets = convertToAssets(ownerShares);
+        if (idle >= maxAssets) return ownerShares;
+        return convertToShares(idle);
+    }
+
     // ─── View ───
 
     function vaultStats() external view returns (
