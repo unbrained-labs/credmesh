@@ -23,12 +23,17 @@ export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Varia
     const signature = c.req.header("X-Agent-Signature");
     const timestamp = c.req.header("X-Agent-Timestamp");
 
+    // No auth headers = unauthenticated request (read-only endpoints still work)
     if (!address || !signature || !timestamp) {
       await next();
       return;
     }
 
-    const ts = Number(timestamp);
+    const ts = parseInt(timestamp, 10);
+    if (isNaN(ts)) {
+      return c.json({ error: "Invalid timestamp." }, 401);
+    }
+
     const now = Math.floor(Date.now() / 1000);
 
     if (Math.abs(now - ts) > MAX_AGE_SECONDS) {

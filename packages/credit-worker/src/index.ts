@@ -18,6 +18,8 @@ app.use("/credit/*", authMiddleware);
 app.use("/marketplace/*", authMiddleware);
 app.use("/spend/*", authMiddleware);
 app.use("/treasury/*", authMiddleware);
+app.use("/demo/*", authMiddleware);
+app.use("/debug/*", authMiddleware);
 
 // ─── Discovery ───
 
@@ -51,7 +53,6 @@ app.get("/cover.svg", (c) => {
 app.get("/health", async (c) => {
   const chainEnabled = isChainEnabled(c.env);
   const escrowEnabled = isEscrowEnabled(c.env);
-  const wallet = getAgentWallet(c.env);
   const escrowStats = escrowEnabled ? await getEscrowStats(c.env) : null;
   const treasuryBalance = chainEnabled ? await getTreasuryBalance(c.env) : null;
   return c.json({
@@ -62,11 +63,8 @@ app.get("/health", async (c) => {
     chain: {
       enabled: chainEnabled,
       network: chainEnabled ? "sepolia" : null,
-      wallet,
-      tokenAddress: c.env.TEST_USDC ?? null,
-      escrowAddress: c.env.CREDIT_ESCROW ?? null,
       escrowEnabled,
-      escrowStats,
+      escrowBalance: escrowStats?.balance ? `${escrowStats.balance} tUSDC` : null,
       treasuryBalance: treasuryBalance ? `${treasuryBalance} tUSDC` : null,
     },
   });
@@ -282,7 +280,15 @@ app.get("/debug/state", async (c) => {
   return c.json(await getAgent(c.env).getSnapshot());
 });
 
-app.onError((error, c) => c.json({ error: error.message }, 400));
+app.onError((error, c) => {
+  // Only expose known business-logic errors, not internal details
+  const msg = error.message;
+  const safe = msg.startsWith("Unknown ") || msg.startsWith("Job is ") || msg.startsWith("Advance is ")
+    ? msg
+    : "Request failed.";
+  console.error("Request error:", msg);
+  return c.json({ error: safe }, 400);
+});
 
 function getAgent(env: Env): DurableObjectStub<CreditAgent> {
   const id = env.CREDIT_AGENT.idFromName("trustvault-credit-singleton");

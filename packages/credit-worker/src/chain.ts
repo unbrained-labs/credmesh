@@ -59,6 +59,9 @@ function getClients(env: Env) {
 /** Convert a UUID string to bytes32 for the escrow contract */
 function uuidToBytes32(uuid: string): Hex {
   const clean = uuid.replace(/-/g, "");
+  if (!/^[0-9a-f]{32}$/i.test(clean)) {
+    throw new Error("Invalid UUID format for bytes32 conversion.");
+  }
   return pad(`0x${clean}` as Hex, { size: 32 });
 }
 

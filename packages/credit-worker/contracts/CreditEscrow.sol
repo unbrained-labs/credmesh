@@ -85,7 +85,7 @@ contract CreditEscrow is Ownable, ReentrancyGuard {
     function settle(
         bytes32 advanceId,
         uint256 payoutAmount
-    ) external nonReentrant {
+    ) external onlyOwner nonReentrant {
         Advance storage adv = advances[advanceId];
         require(adv.agent != address(0), "unknown advance");
         require(!adv.settled, "already settled");
