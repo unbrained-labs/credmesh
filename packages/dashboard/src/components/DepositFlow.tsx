@@ -206,7 +206,7 @@ export function DepositFlow({ vault }: { vault: HealthResponse['vault'] | null }
       )}
 
       <p className="text-[9px] text-text-muted mt-3 border-t border-border pt-2">
-        Deposit tUSDC into the ERC-4626 vault. Earn yield from agent credit fees (85% of protocol fees go to depositors). Share price increases as fees accumulate. Withdraw anytime.
+        Deposit tUSDC into the ERC-4626 vault. Earn yield from agent credit fees (85% of fees go to depositors). Share price increases as fees accumulate. Idle capital is withdrawable instantly; deployed capital unlocks as advances repay.
       </p>
     </Card>
   );

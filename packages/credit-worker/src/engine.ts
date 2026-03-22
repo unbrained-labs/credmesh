@@ -43,6 +43,7 @@ const DEFAULT_STATE: AgentState = {
   treasury: { ...DEFAULT_TREASURY },
   spendRecords: {},
   timeline: [],
+  consumedPayments: {},
 };
 
 export class CreditAgent extends DurableObject<Env> {
@@ -60,6 +61,7 @@ export class CreditAgent extends DurableObject<Env> {
     if (this.state.treasury.totalUnderwriterFees === undefined) this.state.treasury.totalUnderwriterFees = 0;
     if (!this.state.spendRecords) this.state.spendRecords = {};
     if (!this.state.timeline) this.state.timeline = [];
+    if (!this.state.consumedPayments) this.state.consumedPayments = {};
     this.initialized = true;
   }
 
@@ -821,6 +823,19 @@ export class CreditAgent extends DurableObject<Env> {
   async getSnapshot(): Promise<AgentState> {
     await this.init();
     return structuredClone(this.state);
+  }
+
+  // ─── Payment Replay Prevention ───
+
+  async isPaymentConsumed(txHash: string): Promise<boolean> {
+    await this.init();
+    return !!this.state.consumedPayments[txHash.toLowerCase()];
+  }
+
+  async consumePayment(txHash: string, jobId: string): Promise<void> {
+    await this.init();
+    this.state.consumedPayments[txHash.toLowerCase()] = jobId;
+    await this.persist();
   }
 
   // ─── Internal helpers ───

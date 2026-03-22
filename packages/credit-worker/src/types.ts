@@ -136,6 +136,7 @@ export interface AgentState {
   treasury: TreasuryState;
   spendRecords: Record<string, SpendRecord>;
   timeline: TimelineEvent[];
+  consumedPayments: Record<string, string>; // txHash → jobId (prevents replay)
 }
 
 // ── Marketplace ──

@@ -319,7 +319,8 @@ app.post("/credit/advance", async (c) => {
 });
 
 app.post("/credit/default", async (c) => {
-  const body = await c.req.json<{ advanceId: string; reason: string }>();
+  const body = await c.req.json<{ advanceId: string; agentAddress: string; reason: string }>();
+  assertAuthorized(c.get("verifiedAddress"), body.agentAddress);
   return c.json(await getAgent(c.env).defaultAdvance(body));
 });
 
@@ -348,9 +349,25 @@ app.post("/marketplace/jobs/:jobId/complete", async (c) => {
   }>();
   const callerAddress = c.get("verifiedAddress");
   const jobId = c.req.param("jobId");
+  const agent = getAgent(c.env);
 
-  // If chain is enabled and escrow exists, verify payment on-chain
-  if (isEscrowEnabled(c.env) && body.paymentTxHash) {
+  // When escrow is enabled, on-chain payment proof is REQUIRED
+  if (isEscrowEnabled(c.env)) {
+    if (!body.paymentTxHash) {
+      return c.json({
+        error: "Payment proof required. Transfer tUSDC to the escrow contract and provide paymentTxHash.",
+        escrowAddress: c.env.CREDIT_ESCROW,
+        paymentMethods: "/payment/methods",
+      }, 402);
+    }
+
+    // Check for replay — same tx cannot settle multiple jobs
+    const consumed = await agent.isPaymentConsumed(body.paymentTxHash) as boolean;
+    if (consumed) {
+      return c.json({ error: "This payment transaction has already been used to settle a job." }, 409);
+    }
+
+    // Verify the transfer on-chain
     const escrowAddr = c.env.CREDIT_ESCROW!;
     const verification = await verifyPayment(c.env, body.paymentTxHash, escrowAddr, body.actualPayout ?? 0);
     if (!verification || !verification.verified) {
@@ -361,7 +378,9 @@ app.post("/marketplace/jobs/:jobId/complete", async (c) => {
         verification,
       }, 402);
     }
-    // Use the verified on-chain amount as the actual payout
+
+    // Mark tx as consumed and use verified amount
+    await agent.consumePayment(body.paymentTxHash, jobId);
     body.actualPayout = parseFloat(verification.amount);
   }
 
@@ -415,7 +434,8 @@ app.get("/marketplace/jobs/:jobId/bids", async (c) => {
 });
 
 app.post("/marketplace/jobs/:jobId/award", async (c) => {
-  const { bidId } = await c.req.json<{ bidId: string }>();
+  const { bidId, posterAddress } = await c.req.json<{ bidId: string; posterAddress: string }>();
+  assertAuthorized(c.get("verifiedAddress"), posterAddress);
   return c.json(
     await getAgent(c.env).awardBid({
       jobId: c.req.param("jobId"),
@@ -431,8 +451,26 @@ app.post("/treasury/deposit", async (c) => {
     lenderAddress: string;
     amount: number;
     memo?: string;
+    depositTxHash?: string; // On-chain proof of vault deposit
   }>();
+  assertAuthorized(c.get("verifiedAddress"), body.lenderAddress);
   body.amount = positiveNumber(body.amount, "amount");
+
+  // When chain is enabled, require on-chain deposit proof
+  if (isChainEnabled(c.env) && c.env.CREDIT_VAULT) {
+    if (!body.depositTxHash) {
+      return c.json({
+        error: "On-chain deposit proof required. Deposit tUSDC into the vault contract and provide depositTxHash.",
+        vaultContract: c.env.CREDIT_VAULT,
+      }, 402);
+    }
+    const verification = await verifyPayment(c.env, body.depositTxHash, c.env.CREDIT_VAULT, body.amount);
+    if (!verification?.verified) {
+      return c.json({ error: "Deposit verification failed. Transfer must be tUSDC to the vault.", txHash: body.depositTxHash }, 402);
+    }
+    body.amount = parseFloat(verification.amount);
+  }
+
   return c.json(await getAgent(c.env).deposit(body));
 });
 
@@ -481,11 +519,13 @@ app.get("/fees", async (c) => {
 app.post("/spend/record", async (c) => {
   const body = await c.req.json<{
     advanceId: string;
+    agentAddress: string;
     category: SpendCategory;
     amount: number;
     vendor: string;
     description: string;
   }>();
+  assertAuthorized(c.get("verifiedAddress"), body.agentAddress);
   body.amount = positiveNumber(body.amount, "amount");
   body.vendor = boundedString(body.vendor, "vendor");
   body.description = boundedString(body.description, "description");
