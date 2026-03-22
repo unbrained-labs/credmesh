@@ -60,6 +60,21 @@ export function agentCard(env: Env) {
       schemes: ["ethereum-signature"],
       optional: true,
     },
+    agentBootstrap: {
+      gasModel: "protocol-sponsored",
+      tokenModel: "escrow-advance",
+      description: "Agents interact via HTTP only. No tokens or gas needed to start. The protocol wallet signs all on-chain transactions. Agents receive working capital from the escrow via credit advances.",
+      faucet: "/faucet/:address",
+      bootstrapGuide: `${base}/bootstrap`,
+    },
+    paymentProtocols: {
+      x402: {
+        supported: true,
+        description: "Job posters can pay via x402 (Coinbase gasless USDC payments). Activates on Base deployment.",
+        endpoint: "/marketplace/jobs/:jobId/pay",
+        networks: ["eip155:84532", "eip155:8453"],
+      },
+    },
     onchain: {
       network: "sepolia",
       chainId: 11155111,

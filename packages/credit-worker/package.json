@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@x402/hono": "^2.7.0",
     "hono": "^4.7.0"
   },
   "devDependencies": {

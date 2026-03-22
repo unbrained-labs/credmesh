@@ -20,6 +20,7 @@ const ERC20_ABI = parseAbi([
   "function transfer(address to, uint256 amount) returns (bool)",
   "function balanceOf(address account) view returns (uint256)",
   "function approve(address spender, uint256 amount) returns (bool)",
+  "function mint(address to, uint256 amount) external",
 ]);
 
 const ESCROW_ABI = parseAbi([
@@ -347,6 +348,28 @@ export async function vaultRecordDefault(env: Env, lossAmount: number): Promise<
     args: [parseUnits(lossAmount.toFixed(2), 6)],
   });
   return hash;
+}
+
+// ── Faucet ──
+
+/** Mint TestUSDC to an agent address (testnet only — we own the contract). */
+export async function mintTestTokens(
+  env: Env,
+  to: string,
+  amountUsd: number,
+): Promise<{ txHash: string; amount: string } | null> {
+  const clients = getClients(env);
+  if (!clients || !env.TEST_USDC) return null;
+
+  const amount = parseUnits(amountUsd.toFixed(2), 6);
+  const hash = await clients.walletClient.writeContract({
+    address: env.TEST_USDC as Address,
+    abi: ERC20_ABI,
+    functionName: "mint",
+    args: [to as Address, amount],
+  });
+
+  return { txHash: hash, amount: formatUnits(amount, 6) };
 }
 
 // ── Status ──

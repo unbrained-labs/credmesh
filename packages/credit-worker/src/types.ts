@@ -9,6 +9,10 @@ export interface Env {
   TEST_USDC?: string;
   CREDIT_ESCROW?: string;
   CREDIT_VAULT?: string;
+  // x402 payment protocol (activates on Base deployment)
+  X402_FACILITATOR_URL?: string;
+  X402_PAY_TO?: string;
+  X402_NETWORK?: string;
 }
 
 export interface AgentRegistrationInput {

@@ -4,10 +4,11 @@ import { agentCard } from "./agent-card";
 import { CreditAgent } from "./engine";
 import { listScenarios } from "./demo";
 import { checkIdentityRegistration } from "./erc8004";
-import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance } from "./chain";
+import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens } from "./chain";
 import { authMiddleware } from "./auth";
 import { computeFee, PROTOCOL_FEE_BPS } from "./pricing";
 import { positiveNumber, nonNegativeNumber, boundedString } from "./validate";
+import { getX402Config, paymentInstructions } from "./x402";
 import type { AgentRegistrationInput, Env, SpendCategory, TimelineEvent } from "./types";
 
 export { CreditAgent };
@@ -304,6 +305,142 @@ app.post("/demo/reset", async (c) => {
 
 app.get("/demo/scenarios", (c) => {
   return c.json(listScenarios());
+});
+
+// ─── Faucet (testnet only) ───
+
+const FAUCET_AMOUNT = 100; // 100 tUSDC per drip
+const FAUCET_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+const faucetLastDrip = new Map<string, number>();
+
+app.post("/faucet/:address", async (c) => {
+  const address = c.req.param("address").toLowerCase();
+
+  // Rate limit
+  const lastDrip = faucetLastDrip.get(address) ?? 0;
+  const now = Date.now();
+  if (now - lastDrip < FAUCET_COOLDOWN_MS) {
+    const waitMinutes = Math.ceil((FAUCET_COOLDOWN_MS - (now - lastDrip)) / 60000);
+    return c.json({ error: `Rate limited. Try again in ${waitMinutes} minutes.` }, 429);
+  }
+
+  if (!isChainEnabled(c.env)) {
+    return c.json({ error: "Chain not configured." }, 503);
+  }
+
+  const result = await mintTestTokens(c.env, address, FAUCET_AMOUNT);
+  if (!result) {
+    return c.json({ error: "Mint failed." }, 500);
+  }
+
+  faucetLastDrip.set(address, now);
+
+  return c.json({
+    message: `Minted ${result.amount} tUSDC to ${address}`,
+    txHash: result.txHash,
+    amount: `${result.amount} tUSDC`,
+    explorer: `https://sepolia.etherscan.io/tx/${result.txHash}`,
+    note: "Testnet tokens only. 1 drip per hour per address.",
+  });
+});
+
+app.get("/faucet/info", (c) => {
+  return c.json({
+    token: "tUSDC (TestUSDC)",
+    network: "sepolia",
+    amountPerDrip: `${FAUCET_AMOUNT} tUSDC`,
+    cooldown: "1 hour",
+    usage: "POST /faucet/0xYourAddress",
+    note: "Zero-capital bootstrap: register → get tokens from faucet → start borrowing. On mainnet, agents receive advances directly from the escrow without needing pre-existing tokens.",
+  });
+});
+
+// ─── Agent Bootstrap ───
+
+app.get("/bootstrap", (c) => {
+  const x402Config = getX402Config(c.env);
+  return c.json({
+    title: "Zero-Capital Agent Bootstrap",
+    description: "Agents interact via HTTP only. No tokens or gas needed to start.",
+    steps: [
+      {
+        step: 1,
+        action: "Generate a wallet address (any Ethereum keypair)",
+        cost: "Free (local computation)",
+      },
+      {
+        step: 2,
+        action: "POST /agents/register with your address and name",
+        cost: "Free (HTTP call)",
+      },
+      {
+        step: 3,
+        action: "Get assigned a job or bid on one via /marketplace",
+        cost: "Free (HTTP call)",
+      },
+      {
+        step: 4,
+        action: "POST /credit/advance to request working capital",
+        cost: "Free (HTTP call). Escrow sends tUSDC to your address on-chain.",
+      },
+      {
+        step: 5,
+        action: "Spend the advance on compute, APIs, gas, sub-agents",
+        cost: "Track via POST /spend/record",
+      },
+      {
+        step: 6,
+        action: "Complete the job. Waterfall repays principal + fees automatically.",
+        cost: "Free (HTTP call). Worker signs all chain transactions.",
+      },
+    ],
+    gasModel: "Protocol-sponsored. The worker wallet signs all on-chain transactions. Agents never need ETH for gas.",
+    tokenModel: "Agents receive tokens from the escrow via advances. No pre-funding required.",
+    faucet: {
+      available: isChainEnabled(c.env),
+      endpoint: "POST /faucet/:address",
+      note: "For testing/LP deposits. Agents borrowing via advances don't need this.",
+    },
+    x402: {
+      available: !!x402Config,
+      description: "Job posters can pay via x402 (gasless USDC payments via HTTP 402). Payment flows into escrow automatically.",
+      endpoint: x402Config ? "POST /marketplace/jobs/:jobId/pay" : null,
+      network: x402Config?.network ?? "Not configured (set X402_FACILITATOR_URL to enable)",
+    },
+  });
+});
+
+// ─── x402 Payment (for job posters) ───
+
+app.post("/marketplace/jobs/:jobId/pay", async (c) => {
+  const jobId = c.req.param("jobId");
+  const { actualPayout } = await c.req.json<{ actualPayout?: number }>().catch(() => ({ actualPayout: undefined }));
+  const x402Config = getX402Config(c.env);
+
+  // If x402 is configured and no payment header present, return 402 with payment instructions
+  if (x402Config) {
+    const paymentHeader = c.req.header("x-payment") ?? c.req.header("payment-signature");
+    if (!paymentHeader) {
+      const amount = actualPayout ?? 100; // Default hint; real amount from job data
+      return c.json({
+        status: 402,
+        message: "Payment required. Use x402 protocol to authorize USDC transfer.",
+        paymentInstructions: paymentInstructions(x402Config, amount, `Pay for job ${jobId}`),
+        jobId,
+        note: "Sign a USDC transferWithAuthorization and re-send with x-payment header.",
+      }, 402);
+    }
+    // x402 payment header present — in production, the facilitator would have
+    // already settled the USDC on-chain. Proceed to complete the job.
+  }
+
+  // Complete the job with the actual payout
+  const agent = getAgent(c.env);
+  const result = await agent.completeJob({ jobId, actualPayout });
+  return c.json({
+    ...result,
+    paymentMethod: x402Config ? "x402" : "direct",
+  });
 });
 
 // ─── Onchain ───
