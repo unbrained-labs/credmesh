@@ -31,7 +31,7 @@ import type {
   TreasuryState,
   WaterfallResult,
 } from "./types";
-import { escrowIssueAdvance, escrowSettle, writeReputation, isChainEnabled, isEscrowEnabled, transferTokens, vaultRecordRepayment, vaultRecordDefault, vaultSupplyToEscrow } from "./chain";
+import { escrowIssueAdvance, escrowSettle, escrowReturnToVault, writeReputation, isChainEnabled, isEscrowEnabled, transferTokens, vaultRecordRepayment, vaultRecordDefault, vaultSupplyToEscrow } from "./chain";
 import { splitFee } from "./pricing";
 import { norm, rc } from "./utils";
 
@@ -399,10 +399,8 @@ export class CreditAgent extends DurableObject<Env> {
 
     // Authorization: only the job's payer or assigned agent can complete
     if (input.callerAddress) {
-      const caller = input.callerAddress.toLowerCase();
-      const isPayer = job.payer.toLowerCase() === caller;
-      const isAgent = job.agentAddress.toLowerCase() === caller;
-      if (!isPayer && !isAgent) {
+      const caller = norm(input.callerAddress);
+      if (norm(job.payer) !== caller && norm(job.agentAddress) !== caller) {
         throw new Error("Job can only be completed by its payer or assigned agent.");
       }
     }
@@ -491,6 +489,15 @@ export class CreditAgent extends DurableObject<Env> {
         }
       }
 
+      // Return settled capital from escrow back to vault (actual token movement)
+      if (isEscrowEnabled(this.env) && this.env.CREDIT_VAULT) {
+        const returnAmount = waterfall.principalRepaid + waterfall.underwriterFeePaid;
+        if (returnAmount > 0) {
+          await escrowReturnToVault(this.env, returnAmount);
+        }
+      }
+
+      // Update vault accounting (must match the token movement above)
       if (this.env.CREDIT_VAULT && isChainEnabled(this.env)) {
         if (waterfall.principalRepaid > 0 || waterfall.underwriterFeePaid > 0) {
           await vaultRecordRepayment(this.env, waterfall.principalRepaid, waterfall.underwriterFeePaid);

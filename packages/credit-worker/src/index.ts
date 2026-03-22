@@ -4,12 +4,12 @@ import { agentCard } from "./agent-card";
 import { CreditAgent } from "./engine";
 import { listScenarios } from "./demo";
 import { checkIdentityRegistration } from "./erc8004";
-import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens, getVaultPosition, verifyPayment } from "./chain";
+import { isChainEnabled, isEscrowEnabled, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens, getVaultPosition, verifyPayment } from "./chain";
 import { authMiddleware, assertAuthorized, AuthorizationError } from "./auth";
 import { computeFee, PROTOCOL_FEE_BPS } from "./pricing";
 import { positiveNumber, boundedString, ethAddress } from "./validate";
-import { getX402Config, paymentInstructions } from "./x402";
-import type { AgentRegistrationInput, Env, SpendCategory, TimelineEvent } from "./types";
+import { getX402Config } from "./x402";
+import type { AgentRegistrationInput, Env, PortfolioReport, RiskReport, SpendCategory, TimelineEvent, TreasuryState } from "./types";
 
 export { CreditAgent };
 
@@ -149,9 +149,9 @@ app.get("/health", async (c) => {
 app.get("/vault/opportunity", async (c) => {
   const vaultStats = c.env.CREDIT_VAULT ? await getVaultStats(c.env) : null;
   const agent = getAgent(c.env);
-  const treasury = await agent.getTreasury() as import("./types").TreasuryState;
-  const portfolio = await agent.getPortfolio() as import("./types").PortfolioReport;
-  const risk = await agent.getRisk() as import("./types").RiskReport;
+  const treasury = await agent.getTreasury() as TreasuryState;
+  const portfolio = await agent.getPortfolio() as PortfolioReport;
+  const risk = await agent.getRisk() as RiskReport;
 
   const totalAdvances = portfolio.summary.totalAdvances;
   const avgFeeRate = treasury.totalFeesEarned > 0 && treasury.totalAdvanced > 0
@@ -362,7 +362,7 @@ app.post("/marketplace/jobs/:jobId/complete", async (c) => {
     }
 
     // Check for replay — same tx cannot settle multiple jobs
-    const consumed = await agent.isPaymentConsumed(body.paymentTxHash) as boolean;
+    const consumed = await agent.isPaymentConsumed(body.paymentTxHash);
     if (consumed) {
       return c.json({ error: "This payment transaction has already been used to settle a job." }, 409);
     }
@@ -370,7 +370,7 @@ app.post("/marketplace/jobs/:jobId/complete", async (c) => {
     // Verify the transfer on-chain
     const escrowAddr = c.env.CREDIT_ESCROW!;
     const verification = await verifyPayment(c.env, body.paymentTxHash, escrowAddr, body.actualPayout ?? 0);
-    if (!verification || !verification.verified) {
+    if (!verification?.verified) {
       return c.json({
         error: "Payment verification failed. Transfer must be tUSDC to the escrow contract.",
         escrowAddress: escrowAddr,
@@ -385,7 +385,7 @@ app.post("/marketplace/jobs/:jobId/complete", async (c) => {
   }
 
   return c.json(
-    await getAgent(c.env).completeJob({
+    await agent.completeJob({
       jobId,
       actualPayout: body.actualPayout,
       callerAddress,

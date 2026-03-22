@@ -25,6 +25,7 @@ const ERC20_ABI = parseAbi([
 const ESCROW_ABI = parseAbi([
   "function issueAdvance(bytes32 advanceId, address agent, uint256 principal, uint256 fee) external",
   "function settle(bytes32 advanceId, uint256 payoutAmount) external",
+  "function returnToVault(address vault, uint256 amount) external",
   "function availableFunds() external view returns (uint256)",
   "function getAdvance(bytes32 advanceId) external view returns (address agent, uint256 principal, uint256 fee, bool settled)",
   "function stats() external view returns (uint256, uint256, uint256, uint256, uint256, uint256)",
@@ -345,6 +346,26 @@ export async function vaultRecordDefault(env: Env, lossAmount: number): Promise<
     abi: VAULT_ABI,
     functionName: "recordDefault",
     args: [parseUnits(lossAmount.toFixed(2), 6)],
+  });
+  return hash;
+}
+
+// ── Escrow → Vault Capital Return ──
+
+/** After settlement, return repaid capital from escrow back to the vault */
+export async function escrowReturnToVault(
+  env: Env,
+  amount: number,
+): Promise<string | null> {
+  const clients = getClients(env);
+  if (!clients || !env.CREDIT_ESCROW || !env.CREDIT_VAULT) return null;
+
+  const amountWei = parseUnits(amount.toFixed(2), 6);
+  const hash = await clients.walletClient.writeContract({
+    address: env.CREDIT_ESCROW as Address,
+    abi: ESCROW_ABI,
+    functionName: "returnToVault",
+    args: [env.CREDIT_VAULT as Address, amountWei],
   });
   return hash;
 }

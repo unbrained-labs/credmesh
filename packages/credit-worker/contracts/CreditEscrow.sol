@@ -123,6 +123,16 @@ contract CreditEscrow is Ownable, ReentrancyGuard {
         emit Settled(advanceId, adv.agent, principalRepaid, feeRepaid, remaining);
     }
 
+    /// @notice Return settled capital to the vault
+    /// @param vault Address of the CreditVault to return capital to
+    /// @param amount Amount of tokens to return
+    function returnToVault(address vault, uint256 amount) external onlyOwner nonReentrant {
+        require(vault != address(0), "zero vault");
+        require(amount > 0, "zero amount");
+        require(token.balanceOf(address(this)) >= amount, "insufficient balance");
+        token.safeTransfer(vault, amount);
+    }
+
     /// @notice Read advance details
     function getAdvance(bytes32 advanceId) external view returns (
         address agent, uint256 principal, uint256 fee, bool settled
