@@ -55,6 +55,26 @@ export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Varia
   },
 );
 
+/**
+ * Assert the authenticated wallet matches the address being acted upon.
+ * Throws 403 if the signer is trying to act for a different agent.
+ */
+export function assertAuthorized(verifiedAddress: string | undefined, targetAddress: string): void {
+  if (!verifiedAddress) {
+    throw new AuthorizationError("No verified address on context.");
+  }
+  if (verifiedAddress.toLowerCase() !== targetAddress.toLowerCase()) {
+    throw new AuthorizationError(`Signer ${verifiedAddress} cannot act for ${targetAddress}.`);
+  }
+}
+
+export class AuthorizationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthorizationError";
+  }
+}
+
 async function verifyHeaders(
   address: string,
   signature: string,

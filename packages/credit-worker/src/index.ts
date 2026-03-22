@@ -5,7 +5,7 @@ import { CreditAgent } from "./engine";
 import { listScenarios } from "./demo";
 import { checkIdentityRegistration } from "./erc8004";
 import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens, getVaultPosition } from "./chain";
-import { authMiddleware } from "./auth";
+import { authMiddleware, assertAuthorized, AuthorizationError } from "./auth";
 import { computeFee, PROTOCOL_FEE_BPS } from "./pricing";
 import { positiveNumber, boundedString, ethAddress } from "./validate";
 import { getX402Config, paymentInstructions } from "./x402";
@@ -13,7 +13,7 @@ import type { AgentRegistrationInput, Env, SpendCategory, TimelineEvent } from "
 
 export { CreditAgent };
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env; Variables: { verifiedAddress: string } }>();
 
 app.use("*", cors());
 
@@ -267,6 +267,7 @@ app.get("/vault/position/:address", async (c) => {
 
 app.post("/agents/register", async (c) => {
   const body = await c.req.json<AgentRegistrationInput>();
+  assertAuthorized(c.get("verifiedAddress"), body.address); // signer must be the agent
   const agent = getAgent(c.env);
   const identityRegistered = await checkIdentityRegistration(c.env, body.address);
   return c.json(await agent.registerAgent({ ...body, identityRegistered }));
@@ -283,6 +284,7 @@ app.get("/agents/:address", async (c) => {
 
 app.post("/credit/profile", async (c) => {
   const { agentAddress } = await c.req.json<{ agentAddress: string }>();
+  assertAuthorized(c.get("verifiedAddress"), agentAddress);
   return c.json(await getAgent(c.env).getProfile(agentAddress));
 });
 
@@ -293,6 +295,7 @@ app.post("/credit/quote", async (c) => {
     requestedAmount: number;
     purpose: string;
   }>();
+  assertAuthorized(c.get("verifiedAddress"), body.agentAddress);
   body.requestedAmount = positiveNumber(body.requestedAmount, "requestedAmount");
   body.purpose = boundedString(body.purpose, "purpose");
   return c.json(await getAgent(c.env).quoteAdvance(body));
@@ -305,6 +308,7 @@ app.post("/credit/advance", async (c) => {
     requestedAmount: number;
     purpose: string;
   }>();
+  assertAuthorized(c.get("verifiedAddress"), body.agentAddress);
   body.requestedAmount = positiveNumber(body.requestedAmount, "requestedAmount");
   body.purpose = boundedString(body.purpose, "purpose");
   return c.json(await getAgent(c.env).createAdvance(body));
@@ -326,6 +330,7 @@ app.post("/marketplace/jobs", async (c) => {
     durationHours: number;
     category: string;
   }>();
+  assertAuthorized(c.get("verifiedAddress"), body.agentAddress);
   body.expectedPayout = positiveNumber(body.expectedPayout, "expectedPayout");
   body.durationHours = positiveNumber(body.durationHours, "durationHours");
   body.title = boundedString(body.title, "title");
@@ -353,6 +358,7 @@ app.post("/marketplace/post", async (c) => {
     category: string;
     requiredCapabilities?: string[];
   }>();
+  assertAuthorized(c.get("verifiedAddress"), body.postedBy);
   return c.json(await getAgent(c.env).postJob(body));
 });
 
@@ -368,6 +374,7 @@ app.post("/marketplace/jobs/:jobId/bid", async (c) => {
     capabilities: string[];
     pitch: string;
   }>();
+  assertAuthorized(c.get("verifiedAddress"), body.agentAddress);
   return c.json(
     await getAgent(c.env).submitBid({
       jobId: c.req.param("jobId"),
@@ -690,6 +697,9 @@ app.get("/auth/info", (c) => {
 });
 
 app.onError((error, c) => {
+  if (error instanceof AuthorizationError) {
+    return c.json({ error: error.message }, 403);
+  }
   const msg = error.message;
   const safe = msg.startsWith("Unknown ") || msg.startsWith("Job is ") || msg.startsWith("Advance is ")
     ? msg
