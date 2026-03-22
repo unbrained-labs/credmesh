@@ -110,15 +110,32 @@ export function DepositFlow({ vault }: { vault: HealthResponse['vault'] | null }
         </button>
       ) : (
         <div className="space-y-3">
-          {/* Connected status */}
+          {/* Connected status + position */}
           <div className="flex justify-between items-center text-[10px]">
             <div className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 bg-green rounded-full" />
               <span className="text-text-muted">{wallet.address?.slice(0, 8)}...{wallet.address?.slice(-6)}</span>
-              <span className="text-text-muted">|</span>
-              <span className="text-white">{wallet.tokenBalance ?? '?'} tUSDC</span>
             </div>
             <button onClick={disconnect} className="text-red hover:underline">disconnect</button>
+          </div>
+
+          {/* Your position */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-bg border border-border p-2 text-center">
+              <p className="text-[9px] uppercase tracking-widest text-text-muted">Wallet</p>
+              <p className="text-sm font-bold text-white">{parseFloat(wallet.tokenBalance ?? '0').toFixed(2)}</p>
+              <p className="text-[9px] text-text-muted">tUSDC</p>
+            </div>
+            <div className="bg-bg border border-border p-2 text-center">
+              <p className="text-[9px] uppercase tracking-widest text-text-muted">Your Shares</p>
+              <p className="text-sm font-bold text-cyan">{parseFloat(wallet.vaultShares ?? '0').toFixed(2)}</p>
+              <p className="text-[9px] text-text-muted">tvCREDIT</p>
+            </div>
+            <div className="bg-bg border border-border p-2 text-center">
+              <p className="text-[9px] uppercase tracking-widest text-text-muted">Value</p>
+              <p className="text-sm font-bold text-green">${parseFloat(wallet.shareValue ?? '0').toFixed(2)}</p>
+              <p className="text-[9px] text-text-muted">tUSDC</p>
+            </div>
           </div>
 
           {/* Loading vault address */}

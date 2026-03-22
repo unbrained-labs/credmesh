@@ -4,7 +4,7 @@ import { agentCard } from "./agent-card";
 import { CreditAgent } from "./engine";
 import { listScenarios } from "./demo";
 import { checkIdentityRegistration } from "./erc8004";
-import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens } from "./chain";
+import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens, getVaultPosition } from "./chain";
 import { authMiddleware } from "./auth";
 import { computeFee, PROTOCOL_FEE_BPS } from "./pricing";
 import { positiveNumber, boundedString, ethAddress } from "./validate";
@@ -229,22 +229,36 @@ app.get("/vault/opportunity", async (c) => {
 
 app.get("/vault/position/:address", async (c) => {
   const address = c.req.param("address");
-  const vaultStats = c.env.CREDIT_VAULT ? await getVaultStats(c.env) : null;
-  const tokenBalance = await getTokenBalance(c.env, address);
+  const [position, tokenBalance, vaultStats] = await Promise.all([
+    getVaultPosition(c.env, address),
+    getTokenBalance(c.env, address),
+    c.env.CREDIT_VAULT ? getVaultStats(c.env) : null,
+  ]);
 
-  // Read vault shares for this address
-  // Note: we can't read individual balances without indexing, so we show pool-level stats
-  const sharePrice = vaultStats ? parseFloat(vaultStats.sharePrice) : 1;
+  const shares = position ? parseFloat(position.shares) : 0;
+  const value = position ? parseFloat(position.value) : 0;
+  const deposited = shares; // 1:1 at initial deposit
+  const earned = value - deposited;
 
   return c.json({
     address,
-    tokenBalance: tokenBalance ? `${tokenBalance} tUSDC` : null,
-    vault: {
-      sharePrice: vaultStats?.sharePrice ?? "1.000000",
-      totalAssets: vaultStats?.totalAssets ?? "0",
-      feesEarned: vaultStats?.feesEarned ?? "0",
+    wallet: {
+      tUSDC: tokenBalance ? `${tokenBalance}` : "0",
     },
-    note: "To check your vault share balance, call balanceOf(yourAddress) on the vault contract directly. Share value = shares * sharePrice.",
+    position: {
+      shares: position?.shares ?? "0",
+      sharesToken: "tvCREDIT",
+      currentValue: position?.value ?? "0",
+      currentValueToken: "tUSDC",
+      estimatedYield: earned > 0 ? earned.toFixed(6) : "0",
+      sharePrice: position?.sharePrice ?? "1.000000",
+    },
+    pool: {
+      totalAssets: vaultStats?.totalAssets ?? "0",
+      totalShares: vaultStats?.totalShares ?? "0",
+      feesEarned: vaultStats?.feesEarned ?? "0",
+      defaultLoss: vaultStats?.defaultLoss ?? "0",
+    },
     explorer: `https://sepolia.etherscan.io/address/${address}`,
   });
 });

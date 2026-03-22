@@ -1,4 +1,4 @@
-import { BrowserProvider, Contract, parseUnits, formatUnits, type Signer } from 'ethers';
+import { BrowserProvider, Contract, parseUnits, type Signer } from 'ethers';
 
 // Contract addresses (Sepolia)
 const TOKEN_ADDRESS = '0x60f6420c4575bd2777bbd031c2b5b960dfbfc5d8'; // TestUSDC
@@ -73,14 +73,19 @@ export async function connectWallet(): Promise<WalletState> {
     };
   }
 
-  // Read token balance
+  // Read balances from our API (avoids direct RPC issues)
   let tokenBalance = '0';
+  let vaultShares: string | null = null;
+  let shareValue: string | null = null;
   try {
-    const token = new Contract(TOKEN_ADDRESS, ERC20_ABI, provider);
-    const balance = await token.balanceOf(address);
-    tokenBalance = formatUnits(balance, 6); // tUSDC has 6 decimals
+    const BASE = import.meta.env.PROD ? 'https://credit.unbrained.club' : '/api';
+    const res = await fetch(`${BASE}/vault/position/${address}`);
+    const data = await res.json();
+    tokenBalance = data.wallet?.tUSDC ?? '0';
+    vaultShares = data.position?.shares ?? null;
+    shareValue = data.position?.currentValue ?? null;
   } catch (e) {
-    console.error('Failed to read token balance:', e);
+    console.error('Failed to read position:', e);
   }
 
   return {
@@ -88,8 +93,8 @@ export async function connectWallet(): Promise<WalletState> {
     address,
     chainId,
     tokenBalance,
-    vaultShares: null,
-    shareValue: null,
+    vaultShares,
+    shareValue,
   };
 }
 

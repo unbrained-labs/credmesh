@@ -349,6 +349,67 @@ export async function vaultRecordDefault(env: Env, lossAmount: number): Promise<
   return hash;
 }
 
+// ── Vault Position ──
+
+export async function getVaultPosition(env: Env, address: string): Promise<{
+  shares: string;
+  value: string;
+  sharePrice: string;
+} | null> {
+  const clients = getClients(env);
+  if (!clients || !env.CREDIT_VAULT) return null;
+
+  try {
+    const vaultAbi = parseAbi([
+      "function balanceOf(address) view returns (uint256)",
+      "function convertToAssets(uint256 shares) view returns (uint256)",
+      "function totalSupply() view returns (uint256)",
+      "function totalAssets() view returns (uint256)",
+    ]);
+
+    const shares = await clients.publicClient.readContract({
+      address: env.CREDIT_VAULT as Address,
+      abi: vaultAbi,
+      functionName: "balanceOf",
+      args: [address as Address],
+    });
+
+    const value = shares > 0n
+      ? await clients.publicClient.readContract({
+          address: env.CREDIT_VAULT as Address,
+          abi: vaultAbi,
+          functionName: "convertToAssets",
+          args: [shares],
+        })
+      : 0n;
+
+    const totalSupply = await clients.publicClient.readContract({
+      address: env.CREDIT_VAULT as Address,
+      abi: vaultAbi,
+      functionName: "totalSupply",
+    });
+
+    const totalAssets = await clients.publicClient.readContract({
+      address: env.CREDIT_VAULT as Address,
+      abi: vaultAbi,
+      functionName: "totalAssets",
+    });
+
+    const sharePrice = totalSupply > 0n
+      ? (Number(totalAssets) / Number(totalSupply)).toFixed(6)
+      : "1.000000";
+
+    return {
+      shares: formatUnits(shares, 6),
+      value: formatUnits(value, 6),
+      sharePrice,
+    };
+  } catch (e) {
+    console.error("Vault position read failed:", e);
+    return null;
+  }
+}
+
 // ── Faucet ──
 
 /** Mint TestUSDC to an agent address (testnet only — we own the contract). */
