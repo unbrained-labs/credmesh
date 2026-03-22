@@ -347,7 +347,7 @@ function getAgent(env: Env): DurableObjectStub<CreditAgent> {
 function devSpotManifest() {
   return {
     name: "TrustVault Credit",
-    description: "Programmable working capital for autonomous agents. Revenue-backed microcredit underwritten from onchain identity, delivery history, and marketplace receivables.",
+    description: "Programmable working capital for autonomous agents. Revenue-backed microcredit with dynamic utilization-based fees, on-chain escrow, ERC-4626 vault for depositor yield, and reputation-linked underwriting.",
     operator_wallet: "0xa3D3E3859C7EE7EEA5d682A4BaC19c45aDB82388",
     erc8004_identity: {
       registry: "0xb5a8d645ff6c749f600a3ff31d71cdfad518737b",
@@ -356,10 +356,12 @@ function devSpotManifest() {
     },
     supported_tools: [
       "credit-underwriting",
+      "dynamic-fee-pricing",
       "marketplace-bidding",
       "repayment-waterfall",
       "spend-controls",
-      "treasury-management",
+      "erc4626-vault",
+      "on-chain-escrow",
       "risk-dashboard",
     ],
     task_categories: [
@@ -368,6 +370,12 @@ function devSpotManifest() {
       "programmable-spend-controls",
       "portfolio-risk-analysis",
     ],
+    onchain: {
+      network: "sepolia",
+      token: "tUSDC",
+      escrow: "0x9779330f469256c9400efe8880df74a0c29d2ea7",
+      vault: "ERC-4626",
+    },
     compute_constraints: {
       runtime: "cloudflare-workers",
       storage: "durable-objects",
