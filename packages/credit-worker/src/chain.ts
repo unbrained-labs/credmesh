@@ -349,6 +349,55 @@ export async function vaultRecordDefault(env: Env, lossAmount: number): Promise<
   return hash;
 }
 
+// ── Payment Verification ──
+
+/** Verify a token transfer happened on-chain. Returns amount transferred or null. */
+export async function verifyPayment(
+  env: Env,
+  txHash: string,
+  expectedRecipient: string,
+  minAmount: number,
+): Promise<{ verified: boolean; amount: string; from: string } | null> {
+  const clients = getClients(env);
+  if (!clients || !env.TEST_USDC) return null;
+
+  try {
+    const receipt = await clients.publicClient.getTransactionReceipt({
+      hash: txHash as `0x${string}`,
+    });
+
+    if (receipt.status !== "success") return { verified: false, amount: "0", from: "" };
+
+    // Look for ERC-20 Transfer event: Transfer(address from, address to, uint256 value)
+    const transferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+    const tokenAddr = env.TEST_USDC.toLowerCase();
+
+    for (const log of receipt.logs) {
+      if (
+        log.address.toLowerCase() === tokenAddr &&
+        log.topics[0] === transferTopic &&
+        log.topics.length >= 3
+      ) {
+        const to = ("0x" + (log.topics[2] ?? "").slice(26)).toLowerCase();
+        if (to !== expectedRecipient.toLowerCase()) continue;
+
+        const value = BigInt(log.data);
+        const amount = formatUnits(value, 6);
+        const from = ("0x" + (log.topics[1] ?? "").slice(26)).toLowerCase();
+
+        if (parseFloat(amount) >= minAmount) {
+          return { verified: true, amount, from };
+        }
+      }
+    }
+
+    return { verified: false, amount: "0", from: "" };
+  } catch (e) {
+    console.error("Payment verification failed:", e);
+    return null;
+  }
+}
+
 // ── Vault Position ──
 
 export async function getVaultPosition(env: Env, address: string): Promise<{

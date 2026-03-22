@@ -4,7 +4,7 @@ import { agentCard } from "./agent-card";
 import { CreditAgent } from "./engine";
 import { listScenarios } from "./demo";
 import { checkIdentityRegistration } from "./erc8004";
-import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens, getVaultPosition } from "./chain";
+import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens, getVaultPosition, verifyPayment } from "./chain";
 import { authMiddleware, assertAuthorized, AuthorizationError } from "./auth";
 import { computeFee, PROTOCOL_FEE_BPS } from "./pricing";
 import { positiveNumber, boundedString, ethAddress } from "./validate";
@@ -342,12 +342,33 @@ app.post("/marketplace/jobs", async (c) => {
 });
 
 app.post("/marketplace/jobs/:jobId/complete", async (c) => {
-  const { actualPayout } = await c.req.json<{ actualPayout?: number }>();
+  const body = await c.req.json<{
+    actualPayout?: number;
+    paymentTxHash?: string;  // On-chain tUSDC transfer to escrow
+  }>();
   const callerAddress = c.get("verifiedAddress");
+  const jobId = c.req.param("jobId");
+
+  // If chain is enabled and escrow exists, verify payment on-chain
+  if (isEscrowEnabled(c.env) && body.paymentTxHash) {
+    const escrowAddr = c.env.CREDIT_ESCROW!;
+    const verification = await verifyPayment(c.env, body.paymentTxHash, escrowAddr, body.actualPayout ?? 0);
+    if (!verification || !verification.verified) {
+      return c.json({
+        error: "Payment verification failed. Transfer must be tUSDC to the escrow contract.",
+        escrowAddress: escrowAddr,
+        txHash: body.paymentTxHash,
+        verification,
+      }, 402);
+    }
+    // Use the verified on-chain amount as the actual payout
+    body.actualPayout = parseFloat(verification.amount);
+  }
+
   return c.json(
     await getAgent(c.env).completeJob({
-      jobId: c.req.param("jobId"),
-      actualPayout,
+      jobId,
+      actualPayout: body.actualPayout,
       callerAddress,
     }),
   );
@@ -625,46 +646,44 @@ app.get("/bootstrap", (c) => {
   });
 });
 
-// ─── x402 Payment (for job posters) ───
+// ─── Payment Methods ───
 
-app.post("/marketplace/jobs/:jobId/pay", async (c) => {
-  const jobId = c.req.param("jobId");
+app.get("/payment/methods", (c) => {
   const x402Config = getX402Config(c.env);
-
-  // x402 not configured — return 501 with instructions on how to enable
-  if (!x402Config) {
-    return c.json({
-      error: "x402 payment not configured on this deployment.",
-      enableWith: "Set X402_FACILITATOR_URL and X402_PAY_TO environment variables.",
-      alternative: "Use POST /marketplace/jobs/:jobId/complete for direct settlement.",
-    }, 501);
-  }
-
-  // Check for x402 payment header
-  const paymentHeader = c.req.header("x-payment") ?? c.req.header("payment-signature");
-  if (!paymentHeader) {
-    // Return 402 with payment instructions — client must sign and re-send
-    return c.json({
-      status: 402,
-      message: "Payment required. Use x402 protocol to authorize USDC transfer.",
-      paymentInstructions: paymentInstructions(x402Config, 100, `Pay for job ${jobId}`),
-      jobId,
-      note: "Sign a USDC transferWithAuthorization and re-send with x-payment header. See https://x402.org for client SDKs.",
-    }, 402);
-  }
-
-  // Payment header present — verify with the facilitator before completing
-  // TODO: When deployed on Base with real USDC, call facilitator verify/settle:
-  //   const { verify, settle } = await import("@x402/core/server");
-  //   const verifyResult = await facilitator.verify(paymentPayload, requirements);
-  //   if (!verifyResult.isValid) return c.json({ error: "Payment verification failed." }, 402);
-  //   const settleResult = await facilitator.settle(paymentPayload, requirements);
-  // For now, reject — we cannot verify payment without a live facilitator
+  const escrowAddr = c.env.CREDIT_ESCROW;
   return c.json({
-    error: "x402 payment verification not yet available on this network (Sepolia L1). Deploy on Base Sepolia to enable full x402 settlement.",
-    received: "Payment header detected but cannot be verified without Base facilitator.",
-    alternative: "Use POST /marketplace/jobs/:jobId/complete for direct settlement on Sepolia.",
-  }, 501);
+    description: "Supported payment methods for job completion. Payer must prove payment before the waterfall runs.",
+    methods: [
+      {
+        id: "direct-transfer",
+        name: "Direct Token Transfer",
+        status: escrowAddr ? "active" : "unavailable",
+        description: "Transfer tUSDC directly to the escrow contract, then call /marketplace/jobs/:jobId/complete with the paymentTxHash. Worker verifies the transfer on-chain.",
+        flow: [
+          `1. Transfer tUSDC to escrow: ${escrowAddr ?? "not configured"}`,
+          "2. POST /marketplace/jobs/:jobId/complete with { paymentTxHash: '0x...' }",
+          "3. Worker verifies the transfer on-chain (correct token, amount, recipient)",
+          "4. Waterfall runs automatically",
+        ],
+        network: "eip155:11155111",
+      },
+      {
+        id: "x402",
+        name: "x402 Gasless Payment (Coinbase)",
+        status: x402Config ? "active" : "available-on-base",
+        description: "Gasless USDC payment via HTTP 402 protocol. Payer signs a transfer authorization, facilitator settles on-chain.",
+        flow: [
+          "1. POST /marketplace/jobs/:jobId/pay (returns 402 with payment instructions)",
+          "2. Sign USDC transferWithAuthorization (EIP-3009)",
+          "3. Re-send with x-payment header",
+          "4. Facilitator settles on-chain, waterfall runs",
+        ],
+        network: x402Config?.network ?? "eip155:84532 (Base Sepolia)",
+      },
+    ],
+    escrowContract: escrowAddr ?? "not configured",
+    tokenContract: c.env.TEST_USDC ?? "not configured",
+  });
 });
 
 // ─── Onchain ───
