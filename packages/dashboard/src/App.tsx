@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, type PortfolioReport, type RiskReport, type TreasuryState, type TimelineEvent } from './api';
+import { api, type PortfolioReport, type RiskReport, type TreasuryState, type TimelineEvent, type HealthResponse, type FeeInfo } from './api';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { StatsRow } from './components/StatsRow';
@@ -11,21 +11,25 @@ import { Timeline } from './components/Timeline';
 import { DemoControls } from './components/DemoControls';
 import { AlertsPanel } from './components/AlertsPanel';
 import { Terminal } from './components/Terminal';
+import { VaultPanel } from './components/VaultPanel';
+import { FeePanel } from './components/FeePanel';
 
 export default function App() {
   const [portfolio, setPortfolio] = useState<PortfolioReport | null>(null);
   const [risk, setRisk] = useState<RiskReport | null>(null);
   const [treasury, setTreasury] = useState<TreasuryState | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [fees, setFees] = useState<FeeInfo | null>(null);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [p, r, t, tl] = await Promise.all([
-        api.portfolio(), api.risk(), api.treasury(), api.timeline(30),
+      const [p, r, t, h, f, tl] = await Promise.all([
+        api.portfolio(), api.risk(), api.treasury(), api.health(), api.fees(), api.timeline(30),
       ]);
-      setPortfolio(p); setRisk(r); setTreasury(t); setTimeline(tl);
+      setPortfolio(p); setRisk(r); setTreasury(t); setHealth(h); setFees(f); setTimeline(tl);
     } catch (e) {
       console.error('Fetch failed:', e);
     } finally {
@@ -72,10 +76,14 @@ export default function App() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {risk && <RiskGauge risk={risk} />}
           {treasury && portfolio && <WaterfallChart treasury={treasury} totalExposure={portfolio.summary.totalExposure} />}
+          {health && <VaultPanel vault={health.vault} chain={health.chain} />}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <FeePanel fees={fees} />
           {risk && <AlertsPanel alerts={risk.alerts} recommendations={risk.recommendations} />}
+          {portfolio && <ExposureChart exposure={portfolio.exposureByCategory} />}
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {portfolio && <ExposureChart exposure={portfolio.exposureByCategory} />}
           {portfolio && <TopBorrowers borrowers={portfolio.topBorrowers} />}
         </div>
       </main>

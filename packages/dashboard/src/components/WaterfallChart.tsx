@@ -1,5 +1,5 @@
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import type { TreasuryState, PortfolioReport } from '../api';
+import type { TreasuryState } from '../api';
 import { AXIS_TICK, TOOLTIP_STYLE, CURSOR_STYLE, COLORS, dollarFmt } from '../lib/chart';
 import { Card } from './Card';
 
@@ -31,7 +31,7 @@ export function WaterfallChart({ treasury: t, totalExposure }: {
         </BarChart>
       </ResponsiveContainer>
       <div className="flex justify-between text-[10px] text-text-muted mt-2 pt-2 border-t border-border">
-        <span>fees_earned: <span className="text-cyan">${t.totalFeesEarned.toFixed(2)}</span></span>
+        <span>fees: <span className="text-green">${(t.totalUnderwriterFees ?? 0).toFixed(2)}</span> underwriter + <span className="text-amber">${(t.totalProtocolFees ?? 0).toFixed(2)}</span> protocol</span>
         <span>exposure: <span className="text-amber">${totalExposure.toFixed(2)}</span></span>
       </div>
     </Card>

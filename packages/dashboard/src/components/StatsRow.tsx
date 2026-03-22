@@ -20,7 +20,8 @@ export function StatsRow({ summary: s }: { summary: PortfolioReport['summary'] }
       <Stat label="Repayment" value={`${(s.repaymentRate * 100).toFixed(0)}%`}
         color={s.repaymentRate >= 0.8 ? 'text-green' : 'text-amber'} />
       <Stat label="Repaid" value={`$${s.totalRepaid.toFixed(2)}`} color="text-green" />
-      <Stat label="Fees" value={`$${s.totalFeesEarned.toFixed(2)}`} color="text-cyan" />
+      <Stat label="Total Fees" value={`$${s.totalFeesEarned.toFixed(2)}`} color="text-cyan"
+        sub="underwriter + protocol" />
     </div>
   );
 }

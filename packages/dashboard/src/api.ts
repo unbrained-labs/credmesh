@@ -62,7 +62,49 @@ export interface RiskReport {
 
 export interface TreasuryState {
   totalDeposited: number; totalAdvanced: number; totalRepaid: number;
-  totalFeesEarned: number; totalDefaultLoss: number; availableFunds: number;
+  totalFeesEarned: number; totalProtocolFees: number; totalUnderwriterFees: number;
+  totalDefaultLoss: number; availableFunds: number;
+}
+
+export interface HealthResponse {
+  status: string;
+  version: string;
+  chain: {
+    enabled: boolean;
+    network: string | null;
+    escrowEnabled: boolean;
+    vaultEnabled: boolean;
+    escrowBalance: string | null;
+  };
+  vault: {
+    totalAssets: string;
+    totalShares: string;
+    sharePrice: string;
+    idleBalance: string;
+    inAave: string;
+    inEscrow: string;
+    feesEarned: string;
+    defaultLoss: string;
+  } | null;
+}
+
+export interface FeeInfo {
+  model: string;
+  protocolFeeBps: number;
+  protocolFeePercent: string;
+  description: string;
+  currentPool: {
+    totalDeposited: number;
+    totalAdvanced: number;
+    totalFeesEarned: number;
+    underwriterFeesEarned: number;
+    protocolFeesEarned: number;
+    totalDefaultLoss: number;
+  };
+  exampleRates: {
+    bestCase: { description: string; effectiveRate: number; totalFee: number; underwriterFee: number; protocolFee: number };
+    riskyCase: { description: string; effectiveRate: number; totalFee: number; underwriterFee: number; protocolFee: number };
+  };
 }
 
 export interface TimelineEvent {
@@ -74,6 +116,8 @@ export const api = {
   portfolio: () => get<PortfolioReport>('/dashboard/portfolio'),
   risk: () => get<RiskReport>('/dashboard/risk'),
   treasury: () => get<TreasuryState>('/treasury'),
+  health: () => get<HealthResponse>('/health'),
+  fees: () => get<FeeInfo>('/fees'),
   timeline: (limit = 30) => get<TimelineEvent[]>(`/timeline?limit=${limit}`),
   bootstrap: (scenario: 'happy' | 'failure' | 'both') =>
     post<{ summary: string }>('/demo/bootstrap', { scenario }),

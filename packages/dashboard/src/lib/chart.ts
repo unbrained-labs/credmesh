@@ -26,6 +26,8 @@ export function scoreColor(score: number): string {
   return 'text-red';
 }
 
-export function dollarFmt(v: number): [string, string] {
-  return [`$${v.toFixed(2)}`, ''];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function dollarFmt(v: any): [string, string] {
+  const n = Number(Array.isArray(v) ? v[0] : v) || 0;
+  return [`$${n.toFixed(2)}`, ''];
 }
