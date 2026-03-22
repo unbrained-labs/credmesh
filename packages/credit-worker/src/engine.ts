@@ -32,6 +32,7 @@ import type {
   WaterfallResult,
 } from "./types";
 import { escrowIssueAdvance, escrowSettle, writeReputation, isChainEnabled, isEscrowEnabled, transferTokens, vaultRecordRepayment, vaultRecordDefault } from "./chain";
+import { splitFee } from "./pricing";
 import { norm, rc } from "./utils";
 
 const DEFAULT_STATE: AgentState = {
@@ -429,9 +430,22 @@ export class CreditAgent extends DurableObject<Env> {
       agent.outstandingBalance = rc(Math.max(0, agent.outstandingBalance - advanceDue));
     }
 
-    this.state.treasury = returnFunds(this.state.treasury, waterfall.principalRepaid, waterfall.underwriterFeePaid, waterfall.protocolFeePaid);
+    // Penalties are pool revenue — split same as fees
+    const { underwriterFee: penaltyUnderwriter, protocolFee: penaltyProtocol } = splitFee(waterfall.penaltyApplied);
+    this.state.treasury = returnFunds(
+      this.state.treasury,
+      waterfall.principalRepaid,
+      rc(waterfall.underwriterFeePaid + penaltyUnderwriter),
+      rc(waterfall.protocolFeePaid + penaltyProtocol),
+    );
 
-    agent.successfulJobs += 1;
+    // Only count as successful if no advances defaulted
+    const hasDefault = activeAdvances.some((a) => a.status === "defaulted");
+    if (!hasDefault) {
+      agent.successfulJobs += 1;
+    } else {
+      agent.failedJobs += 1;
+    }
     agent.totalRepaid = rc(agent.totalRepaid + repaidTotal);
     agent.averageCompletedPayout = updateAveragePayout(
       agent.averageCompletedPayout,
@@ -502,16 +516,18 @@ export class CreditAgent extends DurableObject<Env> {
 
     const agent = this.requireAgent(advance.agentAddress);
     agent.defaultedAdvances += 1;
-    const lostAmount = rc(advance.approvedAmount + advance.fee);
-    agent.outstandingBalance = rc(Math.max(0, agent.outstandingBalance - lostAmount));
+    // Only principal was disbursed — fee is contingent on repayment
+    const lostPrincipal = advance.approvedAmount;
+    const totalOwed = rc(advance.approvedAmount + advance.fee);
+    agent.outstandingBalance = rc(Math.max(0, agent.outstandingBalance - totalOwed));
     agent.updatedAt = Date.now();
 
     if (agent.defaultedAdvances >= 2) {
       agent.trustScore = Math.max(0, agent.trustScore - 10);
     }
 
-    // Record full loss (principal + fee) to treasury
-    this.state.treasury = recordDefaultLoss(this.state.treasury, lostAmount);
+    // Only record principal as loss (fee was never disbursed)
+    this.state.treasury = recordDefaultLoss(this.state.treasury, lostPrincipal);
 
     const job = this.state.jobs[advance.jobId];
     if (job && job.status === "open") {
@@ -520,7 +536,7 @@ export class CreditAgent extends DurableObject<Env> {
 
     // Record loss in vault
     if (this.env.CREDIT_VAULT && isChainEnabled(this.env)) {
-      await vaultRecordDefault(this.env, lostAmount);
+      await vaultRecordDefault(this.env, lostPrincipal);
     }
 
     // Write default event to ReputationRegistry (score 0 = negative signal)

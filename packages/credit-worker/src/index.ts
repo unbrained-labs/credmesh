@@ -7,6 +7,7 @@ import { checkIdentityRegistration } from "./erc8004";
 import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance } from "./chain";
 import { authMiddleware } from "./auth";
 import { computeFee, PROTOCOL_FEE_BPS } from "./pricing";
+import { positiveNumber, nonNegativeNumber, boundedString } from "./validate";
 import type { AgentRegistrationInput, Env, SpendCategory, TimelineEvent } from "./types";
 
 export { CreditAgent };
@@ -102,6 +103,8 @@ app.post("/credit/quote", async (c) => {
     requestedAmount: number;
     purpose: string;
   }>();
+  body.requestedAmount = positiveNumber(body.requestedAmount, "requestedAmount");
+  body.purpose = boundedString(body.purpose, "purpose");
   return c.json(await getAgent(c.env).quoteAdvance(body));
 });
 
@@ -112,6 +115,8 @@ app.post("/credit/advance", async (c) => {
     requestedAmount: number;
     purpose: string;
   }>();
+  body.requestedAmount = positiveNumber(body.requestedAmount, "requestedAmount");
+  body.purpose = boundedString(body.purpose, "purpose");
   return c.json(await getAgent(c.env).createAdvance(body));
 });
 
@@ -131,6 +136,9 @@ app.post("/marketplace/jobs", async (c) => {
     durationHours: number;
     category: string;
   }>();
+  body.expectedPayout = positiveNumber(body.expectedPayout, "expectedPayout");
+  body.durationHours = positiveNumber(body.durationHours, "durationHours");
+  body.title = boundedString(body.title, "title");
   return c.json(await getAgent(c.env).createJob(body));
 });
 
@@ -200,6 +208,7 @@ app.post("/treasury/deposit", async (c) => {
     amount: number;
     memo?: string;
   }>();
+  body.amount = positiveNumber(body.amount, "amount");
   return c.json(await getAgent(c.env).deposit(body));
 });
 
@@ -253,6 +262,9 @@ app.post("/spend/record", async (c) => {
     vendor: string;
     description: string;
   }>();
+  body.amount = positiveNumber(body.amount, "amount");
+  body.vendor = boundedString(body.vendor, "vendor");
+  body.description = boundedString(body.description, "description");
   return c.json(await getAgent(c.env).recordSpend(body));
 });
 

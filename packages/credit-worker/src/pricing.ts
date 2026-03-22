@@ -98,7 +98,9 @@ export function computeFee(
  * Used by the waterfall when distributing collected fees.
  */
 export function splitFee(totalFee: number): { underwriterFee: number; protocolFee: number } {
-  const protocolFee = rc(totalFee * PROTOCOL_FEE_BPS / 10000);
+  // Use floor for protocol fee to avoid over-extraction; remainder goes to underwriter.
+  // This eliminates double-rounding: only one rounding op, and underwriter + protocol = totalFee exactly.
+  const protocolFee = Math.floor(totalFee * PROTOCOL_FEE_BPS / 100) / 100;
   const underwriterFee = rc(totalFee - protocolFee);
   return { underwriterFee, protocolFee };
 }
@@ -108,8 +110,9 @@ export function splitFee(totalFee: number): { underwriterFee: number; protocolFe
 function computeUtilization(treasury: TreasuryState): number {
   const totalCapital = treasury.totalDeposited - treasury.totalDefaultLoss;
   if (totalCapital <= 0) return 1; // no capital = max utilization
-  const utilized = treasury.totalAdvanced - treasury.totalRepaid;
-  return clamp(utilized / totalCapital, 0, 1);
+  // Use availableFunds as single source of truth (updated by reserveFunds/returnFunds)
+  // rather than running totals that can drift over many cycles
+  return clamp(1 - treasury.availableFunds / totalCapital, 0, 1);
 }
 
 /**
