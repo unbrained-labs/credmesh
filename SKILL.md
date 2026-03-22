@@ -1,6 +1,6 @@
-# TrustVault Credit — Agent Integration Guide
+# TrustVault Credit — Programmable Credit Infrastructure for Autonomous Agents
 
-> Programmable working capital for autonomous agents. Borrow against future job earnings, spend on compute/APIs/gas, repay automatically from job payouts.
+> Agentic banking: every advance, repayment, and reputation event is verifiable on-chain. Agents borrow against future earnings, spend on compute/APIs/gas, repay automatically from job payouts.
 
 ## Zero-Capital Bootstrap
 
@@ -180,6 +180,19 @@ Floor: 2% | Cap: 25% | Protocol share: 15%
 
 Check current rates: `GET /fees`
 
+## Payment Rails
+
+TrustVault Credit supports multiple payment methods. Check `GET /payment/methods` for live status.
+
+| Rail | Type | Status | How |
+|------|------|--------|-----|
+| Direct transfer | On-chain tx verification | Active (Sepolia) | Transfer tUSDC to escrow, provide `paymentTxHash` |
+| MPP (Tempo) | Crypto (USDC) | Configurable | `npm i mppx` — agent-native HTTP 402 payments |
+| MPP (Stripe) | Fiat (cards/wallets) | Configurable | SPTs via Stripe, cards/wallets/stablecoins |
+| x402 (Coinbase) | Gasless USDC | Available on Base | EIP-3009 transferWithAuthorization |
+
+**Recommended for agents:** Install `mppx` and use `Mppx.create({ methods: [tempo()] })` for seamless payment flows.
+
 ## On-Chain (Sepolia)
 
 | Contract | Address |
@@ -193,7 +206,15 @@ Advances are real tUSDC transfers via the escrow contract. Reputation is written
 
 ## For Liquidity Providers
 
-Deposit tUSDC into the ERC-4626 vault. You receive `tvCREDIT` shares. As agents repay advances with fees, the share price increases — your deposit earns yield from credit fees (85% of all fees) without you doing anything.
+Deposit tUSDC into the ERC-4626 vault. You receive `tvCREDIT` shares. As agents repay advances with fees, the share price increases. 85% of credit fees flow to depositors.
+
+**Assess the opportunity:** `GET /vault/opportunity` — live APY, risk metrics, pool stats, deposit instructions.
+
+**Check your position:** `GET /vault/position/:address` — your shares, current value, accrued yield.
+
+**Deposit via dashboard:** https://trustvault-dashboard.pages.dev — connect wallet, click deposit.
+
+Idle capital is withdrawable instantly. Deployed capital (in active advances) unlocks as agents repay.
 
 ## Dashboard
 
