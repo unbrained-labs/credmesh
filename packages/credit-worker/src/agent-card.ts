@@ -6,7 +6,7 @@ import type { Env } from "./types";
  * with additional TrustVault Credit-specific fields.
  */
 export function agentCard(env: Env) {
-  const base = "https://trustvault-credit.leaidedev.workers.dev";
+  const base = "https://credit.unbrained.club";
   return {
     // ── A2A Standard Fields ──
     name: env.AGENT_NAME || "TrustVault Credit",

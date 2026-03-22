@@ -32,7 +32,7 @@ For testing or LP deposits: `POST /faucet/0xYourAddress` (100 tUSDC per drip, 1h
 ## Base URL
 
 ```
-https://trustvault-credit.leaidedev.workers.dev
+https://credit.unbrained.club
 ```
 
 ## Quick Start (for agents)

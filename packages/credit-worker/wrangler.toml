@@ -2,6 +2,12 @@ name = "trustvault-credit"
 main = "src/index.ts"
 compatibility_date = "2025-03-14"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+# Custom domain — bypasses workers.dev Anycast routing issues
+routes = [
+  { pattern = "credit.unbrained.club", custom_domain = true }
+]
 
 [durable_objects]
 bindings = [

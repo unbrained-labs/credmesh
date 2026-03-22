@@ -1,5 +1,5 @@
 const BASE = import.meta.env.PROD
-  ? 'https://trustvault-credit.leaidedev.workers.dev'
+  ? 'https://credit.unbrained.club'
   : '/api';
 
 async function get<T>(path: string): Promise<T> {
