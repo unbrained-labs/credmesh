@@ -16,13 +16,14 @@ export { CreditAgent };
 const app = new Hono<{ Bindings: Env }>();
 
 app.use("*", cors());
+
+// Auth on financial endpoints — POST requires wallet signature, GET is public
 app.use("/agents/*", authMiddleware);
 app.use("/credit/*", authMiddleware);
 app.use("/marketplace/*", authMiddleware);
 app.use("/spend/*", authMiddleware);
 app.use("/treasury/*", authMiddleware);
-app.use("/demo/*", authMiddleware);
-app.use("/debug/*", authMiddleware);
+// Demo/bootstrap endpoints are intentionally public (judges, dashboards, agents bootstrapping)
 
 // ─── Discovery ───
 

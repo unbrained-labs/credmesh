@@ -187,21 +187,21 @@ export function generateHappyPath() {
   return {
     agents: [
       {
-        address: "0xAgent_Atlas_Research_001",
+        address: "0xaa11111111111111111111111111111111111111",
         name: "atlas-research",
         url: "https://atlas-research.agent.example",
         trustScore: 82, attestationCount: 15, cooperationSuccessCount: 8,
         successfulJobs: 12, failedJobs: 1, averageCompletedPayout: 95,
       },
       {
-        address: "0xAgent_Codex_Builder_002",
+        address: "0xbb22222222222222222222222222222222222222",
         name: "codex-builder",
         url: "https://codex-builder.agent.example",
         trustScore: 75, attestationCount: 10, cooperationSuccessCount: 6,
         successfulJobs: 8, failedJobs: 0, averageCompletedPayout: 120,
       },
       {
-        address: "0xAgent_Scout_Browser_003",
+        address: "0xcc33333333333333333333333333333333333333",
         name: "scout-browser",
         url: "https://scout-browser.agent.example",
         trustScore: 68, attestationCount: 7, cooperationSuccessCount: 4,
@@ -209,14 +209,14 @@ export function generateHappyPath() {
       },
     ],
     jobs: [
-      { agentAddress: "0xAgent_Atlas_Research_001", payer: "0xClient_AlphaDAO", title: "Market research on DeFi lending protocols", expectedPayout: 100, durationHours: 48, category: "research" },
-      { agentAddress: "0xAgent_Codex_Builder_002", payer: "0xClient_BetaLabs", title: "Build smart contract integration module", expectedPayout: 150, durationHours: 72, category: "code" },
-      { agentAddress: "0xAgent_Scout_Browser_003", payer: "0xClient_GammaCorp", title: "Competitive analysis web scraping pipeline", expectedPayout: 80, durationHours: 24, category: "browser-automation" },
+      { agentAddress: "0xaa11111111111111111111111111111111111111", payer: "0xc11e000000000000000000000000000000000001", title: "Market research on DeFi lending protocols", expectedPayout: 100, durationHours: 48, category: "research" },
+      { agentAddress: "0xbb22222222222222222222222222222222222222", payer: "0xc11e000000000000000000000000000000000002", title: "Build smart contract integration module", expectedPayout: 150, durationHours: 72, category: "code" },
+      { agentAddress: "0xcc33333333333333333333333333333333333333", payer: "0xc11e000000000000000000000000000000000003", title: "Competitive analysis web scraping pipeline", expectedPayout: 80, durationHours: 24, category: "browser-automation" },
     ],
     advances: [
-      { agentAddress: "0xAgent_Atlas_Research_001", jobIndex: 0, requestedAmount: 15, purpose: "compute" },
-      { agentAddress: "0xAgent_Codex_Builder_002", jobIndex: 1, requestedAmount: 25, purpose: "tools" },
-      { agentAddress: "0xAgent_Scout_Browser_003", jobIndex: 2, requestedAmount: 12, purpose: "browser" },
+      { agentAddress: "0xaa11111111111111111111111111111111111111", jobIndex: 0, requestedAmount: 15, purpose: "compute" },
+      { agentAddress: "0xbb22222222222222222222222222222222222222", jobIndex: 1, requestedAmount: 25, purpose: "tools" },
+      { agentAddress: "0xcc33333333333333333333333333333333333333", jobIndex: 2, requestedAmount: 12, purpose: "browser" },
     ],
     completions: [
       { jobIndex: 0, actualPayout: 100 },
@@ -230,14 +230,14 @@ export function generateFailurePath() {
   return {
     agents: [
       {
-        address: "0xAgent_Risky_Runner_004",
+        address: "0xdd44444444444444444444444444444444444444",
         name: "risky-runner",
         url: "https://risky-runner.agent.example",
         trustScore: 45, attestationCount: 3, cooperationSuccessCount: 1,
         successfulJobs: 2, failedJobs: 2, averageCompletedPayout: 40,
       },
       {
-        address: "0xAgent_New_Agent_005",
+        address: "0xee55555555555555555555555555555555555555",
         name: "new-agent-99",
         url: "https://new-agent-99.agent.example",
         trustScore: 30, attestationCount: 0, cooperationSuccessCount: 0,
@@ -245,12 +245,12 @@ export function generateFailurePath() {
       },
     ],
     jobs: [
-      { agentAddress: "0xAgent_Risky_Runner_004", payer: "0xClient_DeltaInc", title: "Automated onchain trade execution", expectedPayout: 60, durationHours: 12, category: "onchain" },
-      { agentAddress: "0xAgent_New_Agent_005", payer: "0xClient_EpsilonDAO", title: "Social media growth campaign", expectedPayout: 40, durationHours: 24, category: "growth" },
+      { agentAddress: "0xdd44444444444444444444444444444444444444", payer: "0xc11e000000000000000000000000000000000004", title: "Automated onchain trade execution", expectedPayout: 60, durationHours: 12, category: "onchain" },
+      { agentAddress: "0xee55555555555555555555555555555555555555", payer: "0xc11e000000000000000000000000000000000005", title: "Social media growth campaign", expectedPayout: 40, durationHours: 24, category: "growth" },
     ],
     advances: [
-      { agentAddress: "0xAgent_Risky_Runner_004", jobIndex: 0, requestedAmount: 10, purpose: "gas" },
-      { agentAddress: "0xAgent_New_Agent_005", jobIndex: 1, requestedAmount: 8, purpose: "compute" },
+      { agentAddress: "0xdd44444444444444444444444444444444444444", jobIndex: 0, requestedAmount: 10, purpose: "gas" },
+      { agentAddress: "0xee55555555555555555555555555555555555555", jobIndex: 1, requestedAmount: 8, purpose: "compute" },
     ],
     partialCompletions: [{ jobIndex: 0, actualPayout: 30 }],
     defaults: [{ advanceIndex: 1, reason: "Agent failed to deliver any output." }],

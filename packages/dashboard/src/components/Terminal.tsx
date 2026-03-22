@@ -14,15 +14,23 @@ const COMMANDS = [
   { cmd: 'job', desc: 'Create a job for an agent', args: 'agentAddress title payout category' },
   { cmd: 'advance', desc: 'Request a credit advance', args: 'agentAddress jobId amount purpose' },
   { cmd: 'complete', desc: 'Complete a job', args: 'jobId [actualPayout]' },
+  { cmd: 'demo', desc: 'Bootstrap demo data (happy/failure/both)', args: '[scenario]' },
+  { cmd: 'reset', desc: 'Reset all state', args: '' },
   { cmd: 'help', desc: 'Show available commands', args: '' },
   { cmd: 'clear', desc: 'Clear terminal', args: '' },
 ];
 
+// Default addresses for terminal convenience (valid Ethereum format)
+const DEMO_LENDER = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const DEMO_AGENT = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const DEMO_CLIENT = '0xcccccccccccccccccccccccccccccccccccccccc';
+
 export function Terminal({ onMutation }: { onMutation: () => void }) {
   const [input, setInput] = useState('');
   const [log, setLog] = useState<LogEntry[]>([
-    { id: '0', type: 'info', text: 'TrustVault Credit Terminal v0.2.0 — type "help" for commands' },
-    { id: '1', type: 'info', text: 'All commands hit the live API at trustvault-credit.leaidedev.workers.dev' },
+    { id: '0', type: 'info', text: 'TrustVault Credit Terminal v0.6.0 — type "help" for commands' },
+    { id: '1', type: 'info', text: 'All commands hit the live API. Try: demo → then check the dashboard panels.' },
+    { id: '2', type: 'info', text: 'Agent endpoints require wallet signature auth (EIP-191). Use demo/reset for quick testing.' },
   ]);
   const [running, setRunning] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -53,14 +61,14 @@ export function Terminal({ onMutation }: { onMutation: () => void }) {
         }
         case 'deposit': {
           const amount = Number(parts[1] || 500);
-          push('req', `POST /treasury/deposit { lenderAddress: "0xTerminal_User", amount: ${amount} }`);
-          const r = await api.depositFunds({ lenderAddress: '0xTerminal_User', amount, memo: 'Terminal deposit' });
+          push('req', `POST /treasury/deposit { amount: ${amount} }`);
+          const r = await api.depositFunds({ lenderAddress: DEMO_LENDER, amount, memo: 'Terminal deposit' });
           push('res', formatJson(r.response));
           onMutation();
           break;
         }
         case 'register': {
-          const addr = parts[1] || '0xAgent_Terminal_001';
+          const addr = parts[1] || DEMO_AGENT;
           const name = parts[2] || 'terminal-agent';
           const trust = Number(parts[3] || 70);
           push('req', `POST /agents/register { address: "${addr}", name: "${name}", trustScore: ${trust} }`);
@@ -75,8 +83,8 @@ export function Terminal({ onMutation }: { onMutation: () => void }) {
           const payout = Number(parts[3] || 100);
           const cat = parts[4] || 'code';
           if (!agent) { push('err', 'Usage: job <agentAddress> [title] [payout] [category]'); break; }
-          push('req', `POST /marketplace/jobs { agentAddress: "${agent}", payer: "0xTerminal", expectedPayout: ${payout} }`);
-          const r = await api.createJob({ agentAddress: agent, payer: '0xTerminal_Client', title, expectedPayout: payout, durationHours: 48, category: cat });
+          push('req', `POST /marketplace/jobs { agentAddress: "${agent}", expectedPayout: ${payout} }`);
+          const r = await api.createJob({ agentAddress: agent, payer: DEMO_CLIENT, title, expectedPayout: payout, durationHours: 48, category: cat });
           push('res', formatJson(r.response));
           onMutation();
           break;
@@ -100,6 +108,21 @@ export function Terminal({ onMutation }: { onMutation: () => void }) {
           push('req', `POST /marketplace/jobs/${jobId}/complete ${payout ? `{ actualPayout: ${payout} }` : '{}'}`);
           const r = await api.completeJob(jobId, payout);
           push('res', formatJson(r.response));
+          onMutation();
+          break;
+        }
+        case 'demo': {
+          const scenario = (parts[1] || 'both') as 'happy' | 'failure' | 'both';
+          push('req', `POST /demo/bootstrap { scenario: "${scenario}" }`);
+          const r = await api.bootstrap(scenario);
+          push('res', `${r.summary}`);
+          onMutation();
+          break;
+        }
+        case 'reset': {
+          push('req', 'POST /demo/reset');
+          const r = await api.reset();
+          push('res', r.message);
           onMutation();
           break;
         }

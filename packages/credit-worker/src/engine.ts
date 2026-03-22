@@ -699,9 +699,9 @@ export class CreditAgent extends DurableObject<Env> {
     await this.init();
 
     if (this.state.treasury.availableFunds <= 0) {
-      const { treasury } = depositFunds(this.state.treasury, "0xTreasury_Seed_Lender", 1000, "Demo seed capital");
+      const { treasury } = depositFunds(this.state.treasury, "0xfff0000000000000000000000000000000000001", 1000, "Demo seed capital");
       this.state.treasury = treasury;
-      this.pushEvent("deposit_received", "0xTreasury_Seed_Lender", "Demo treasury seeded with $1000.", { amount: 1000 });
+      this.pushEvent("deposit_received", "0xfff0000000000000000000000000000000000001", "Demo treasury seeded with $1000.", { amount: 1000 });
     }
 
     let agentsCreated = 0;
