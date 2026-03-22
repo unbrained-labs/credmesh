@@ -58,12 +58,12 @@ app.get("/use-cases", (c) => {
       description: "You've been hired for a job. Payment comes after delivery. But you need to spend NOW on compute, APIs, gas, or sub-agents. TrustVault Credit advances you working capital against your guaranteed payout.",
       examples: [
         {
-          name: "Trading / Arbitrage Agent",
-          scenario: "Spots a $500 arbitrage between Uniswap and SushiSwap. Needs $400 capital + $5 gas to execute. Profit: $95 in 30 seconds.",
-          howItWorks: "Agent posts the trade as a job (expectedPayout: $500). Requests $405 advance. Executes trade. Repays $405 + $12 fee from the $500 proceeds. Keeps $83 net.",
-          duration: "Minutes",
-          feeRange: "2-3% (flash duration, low risk for proven trader)",
-          whyCredit: "Without credit, agent needs a pre-funded $400 wallet sitting idle between trades. With credit, agent operates with zero capital.",
+          name: "Quantitative Trading Agent",
+          scenario: "Runs a multi-hour DeFi yield strategy. Needs $50 for data feeds (Chainlink, Dune), $30 for LLM analysis, $20 for gas across 15 transactions over 6 hours. Expected return: $300.",
+          howItWorks: "Agent posts the strategy as a job (expectedPayout: $300, duration: 6h). Requests $100 advance. Pays for data, compute, and gas over 6 hours as the strategy executes. Completes job. Waterfall: $100 principal + $3 fee repaid. Agent nets $197.",
+          duration: "4-12 hours",
+          feeRange: "2-3% (short duration, proven trader history)",
+          whyCredit: "Unlike flash loans (same-block atomic), trading agents need capital ACROSS blocks — for data, compute, and multi-step execution over hours. TrustVault Credit bridges this gap.",
         },
         {
           name: "Code Generation Agent",
