@@ -198,14 +198,19 @@ export class CreditAgent extends DurableObject<Env> {
     this.state.treasury = reserveFunds(this.state.treasury, advance.approvedAmount);
 
     // Issue advance on-chain: escrow contract or direct transfer
-    if (isEscrowEnabled(this.env)) {
-      const txResult = await escrowIssueAdvance(
-        this.env, advance.id, input.agentAddress, advance.approvedAmount, advance.fee,
-      );
-      if (txResult) advance.transferTxHash = txResult.txHash;
-    } else if (isChainEnabled(this.env)) {
-      const txResult = await transferTokens(this.env, input.agentAddress, advance.approvedAmount);
-      if (txResult) advance.transferTxHash = txResult.txHash;
+    // Wrapped in try/catch so demo data works even if chain ops fail
+    try {
+      if (isEscrowEnabled(this.env)) {
+        const txResult = await escrowIssueAdvance(
+          this.env, advance.id, input.agentAddress, advance.approvedAmount, advance.fee,
+        );
+        if (txResult) advance.transferTxHash = txResult.txHash;
+      } else if (isChainEnabled(this.env)) {
+        const txResult = await transferTokens(this.env, input.agentAddress, advance.approvedAmount);
+        if (txResult) advance.transferTxHash = txResult.txHash;
+      }
+    } catch (e) {
+      console.error("Chain advance failed (non-fatal):", e);
     }
 
     this.pushEvent("advance_created", norm(input.agentAddress), `Advance $${advance.approvedAmount.toFixed(2)} issued for "${input.purpose}".`, {
@@ -457,43 +462,45 @@ export class CreditAgent extends DurableObject<Env> {
     );
     agent.updatedAt = Date.now();
 
-    // Settle advances on-chain via escrow waterfall
-    if (isEscrowEnabled(this.env)) {
-      for (const advance of activeAdvances) {
-        const repayAmount = advance.repaidAmount ?? 0;
-        if (repayAmount > 0) {
-          const settleTx = await escrowSettle(this.env, advance.id, repayAmount);
-          if (settleTx) advance.repaymentTxHash = settleTx.txHash;
+    // On-chain operations: settle escrow, record in vault, write reputation
+    // Wrapped in try/catch so demo/test data works even if chain ops fail
+    try {
+      if (isEscrowEnabled(this.env)) {
+        for (const advance of activeAdvances) {
+          const repayAmount = advance.repaidAmount ?? 0;
+          if (repayAmount > 0) {
+            const settleTx = await escrowSettle(this.env, advance.id, repayAmount);
+            if (settleTx) advance.repaymentTxHash = settleTx.txHash;
+          }
         }
       }
-    }
 
-    // Record repayment in vault (only underwriter fees increase share value)
-    if (this.env.CREDIT_VAULT && isChainEnabled(this.env)) {
-      if (waterfall.principalRepaid > 0 || waterfall.underwriterFeePaid > 0) {
-        await vaultRecordRepayment(this.env, waterfall.principalRepaid, waterfall.underwriterFeePaid);
+      if (this.env.CREDIT_VAULT && isChainEnabled(this.env)) {
+        if (waterfall.principalRepaid > 0 || waterfall.underwriterFeePaid > 0) {
+          await vaultRecordRepayment(this.env, waterfall.principalRepaid, waterfall.underwriterFeePaid);
+        }
+        if (waterfall.shortfall > 0) {
+          await vaultRecordDefault(this.env, waterfall.shortfall);
+        }
       }
-      if (waterfall.shortfall > 0) {
-        await vaultRecordDefault(this.env, waterfall.shortfall);
-      }
-    }
 
-    // Write reputation to ReputationRegistry on-chain
-    if (isChainEnabled(this.env)) {
-      const hasDefault = activeAdvances.some((a) => a.status === "defaulted");
-      const score = hasDefault ? 1 : 10;
-      const evidence = JSON.stringify({
-        type: hasDefault ? "partial_repayment" : "full_repayment",
-        jobId: job.id,
-        payout: actualPayout,
-        waterfall: waterfall.status,
-        advances: activeAdvances.length,
-        source: "trustvault-credit",
-      });
-      const txHash = await writeReputation(this.env, agent.address, score, evidence);
-      if (txHash) {
-        job.reputationTxHash = txHash;
+      if (isChainEnabled(this.env)) {
+        const score = hasDefault ? 1 : 10;
+        const evidence = JSON.stringify({
+          type: hasDefault ? "partial_repayment" : "full_repayment",
+          jobId: job.id,
+          payout: actualPayout,
+          waterfall: waterfall.status,
+          advances: activeAdvances.length,
+          source: "trustvault-credit",
+        });
+        const txHash = await writeReputation(this.env, agent.address, score, evidence);
+        if (txHash) {
+          job.reputationTxHash = txHash;
+        }
       }
+    } catch (e) {
+      console.error("Chain settlement failed (non-fatal):", e);
     }
 
     this.pushEvent("job_completed", agent.address, `Job "${job.title}" completed. Payout: $${actualPayout.toFixed(2)}.`, {
@@ -537,21 +544,23 @@ export class CreditAgent extends DurableObject<Env> {
       job.status = "defaulted";
     }
 
-    // Record loss in vault
-    if (this.env.CREDIT_VAULT && isChainEnabled(this.env)) {
-      await vaultRecordDefault(this.env, lostPrincipal);
-    }
-
-    // Write default event to ReputationRegistry (score 0 = negative signal)
-    if (isChainEnabled(this.env)) {
-      const evidence = JSON.stringify({
-        type: "default",
-        advanceId: advance.id,
-        amount: advance.approvedAmount,
-        reason: input.reason,
-        source: "trustvault-credit",
-      });
-      await writeReputation(this.env, agent.address, 0, evidence);
+    // On-chain: record loss in vault + write negative reputation
+    try {
+      if (this.env.CREDIT_VAULT && isChainEnabled(this.env)) {
+        await vaultRecordDefault(this.env, lostPrincipal);
+      }
+      if (isChainEnabled(this.env)) {
+        const evidence = JSON.stringify({
+          type: "default",
+          advanceId: advance.id,
+          amount: advance.approvedAmount,
+          reason: input.reason,
+          source: "trustvault-credit",
+        });
+        await writeReputation(this.env, agent.address, 0, evidence);
+      }
+    } catch (e) {
+      console.error("Chain default recording failed (non-fatal):", e);
     }
 
     this.pushEvent("advance_defaulted", agent.address, `Advance $${advance.approvedAmount.toFixed(2)} defaulted: ${input.reason}`, {
