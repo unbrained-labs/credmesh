@@ -20,7 +20,8 @@ let mppInitEnv: string | null = null;
 function initMpp(env: Env): MppCharger | null {
   if (!env.TEMPO_ACCOUNT && !env.STRIPE_SECRET_KEY) return null;
 
-  const envKey = `${env.TEMPO_ACCOUNT ?? ""}:${env.STRIPE_SECRET_KEY ?? ""}`;
+  // Cache key uses presence flags, not secret values
+  const envKey = `${env.TEMPO_ACCOUNT ? "t" : ""}:${env.STRIPE_SECRET_KEY ? "s" : ""}`;
   if (mppInstance && mppInitEnv === envKey) return mppInstance;
 
   const methods: unknown[] = [];
@@ -32,7 +33,12 @@ function initMpp(env: Env): MppCharger | null {
     methods.push(stripe({ secretKey: env.STRIPE_SECRET_KEY }));
   }
 
-  mppInstance = Mppx.create({ methods } as never) as unknown as MppCharger;
+  const created = Mppx.create({ methods } as never) as unknown as MppCharger;
+  if (typeof created?.charge !== "function") {
+    console.error("MPP: Mppx.create() did not return a charger");
+    return null;
+  }
+  mppInstance = created;
   mppInitEnv = envKey;
   return mppInstance;
 }
