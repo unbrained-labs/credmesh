@@ -9,6 +9,7 @@ import { authMiddleware, assertAuthorized, AuthorizationError } from "./auth";
 import { computeFee, PROTOCOL_FEE_BPS } from "./pricing";
 import { positiveNumber, boundedString, ethAddress } from "./validate";
 import { getX402Config } from "./x402";
+import { getPaymentMethods } from "./payments";
 import type { AgentRegistrationInput, Env, PortfolioReport, RiskReport, SpendCategory, TimelineEvent, TreasuryState } from "./types";
 
 export { CreditAgent };
@@ -697,41 +698,7 @@ app.get("/bootstrap", (c) => {
 // ─── Payment Methods ───
 
 app.get("/payment/methods", (c) => {
-  const x402Config = getX402Config(c.env);
-  const escrowAddr = c.env.CREDIT_ESCROW;
-  return c.json({
-    description: "Supported payment methods for job completion. Payer must prove payment before the waterfall runs.",
-    methods: [
-      {
-        id: "direct-transfer",
-        name: "Direct Token Transfer",
-        status: escrowAddr ? "active" : "unavailable",
-        description: "Transfer tUSDC directly to the escrow contract, then call /marketplace/jobs/:jobId/complete with the paymentTxHash. Worker verifies the transfer on-chain.",
-        flow: [
-          `1. Transfer tUSDC to escrow: ${escrowAddr ?? "not configured"}`,
-          "2. POST /marketplace/jobs/:jobId/complete with { paymentTxHash: '0x...' }",
-          "3. Worker verifies the transfer on-chain (correct token, amount, recipient)",
-          "4. Waterfall runs automatically",
-        ],
-        network: "eip155:11155111",
-      },
-      {
-        id: "x402",
-        name: "x402 Gasless Payment (Coinbase)",
-        status: x402Config ? "active" : "available-on-base",
-        description: "Gasless USDC payment via HTTP 402 protocol. Payer signs a transfer authorization, facilitator settles on-chain.",
-        flow: [
-          "1. POST /marketplace/jobs/:jobId/pay (returns 402 with payment instructions)",
-          "2. Sign USDC transferWithAuthorization (EIP-3009)",
-          "3. Re-send with x-payment header",
-          "4. Facilitator settles on-chain, waterfall runs",
-        ],
-        network: x402Config?.network ?? "eip155:84532 (Base Sepolia)",
-      },
-    ],
-    escrowContract: escrowAddr ?? "not configured",
-    tokenContract: c.env.TEST_USDC ?? "not configured",
-  });
+  return c.json(getPaymentMethods(c.env));
 });
 
 // ─── Onchain ───
