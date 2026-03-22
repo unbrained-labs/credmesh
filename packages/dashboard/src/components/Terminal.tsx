@@ -9,13 +9,13 @@ interface LogEntry {
 }
 
 const COMMANDS = [
-  { cmd: 'deposit', desc: 'Fund the treasury', args: 'amount' },
-  { cmd: 'register', desc: 'Register an agent', args: 'address name trustScore' },
-  { cmd: 'job', desc: 'Create a job for an agent', args: 'agentAddress title payout category' },
-  { cmd: 'advance', desc: 'Request a credit advance', args: 'agentAddress jobId amount purpose' },
-  { cmd: 'complete', desc: 'Complete a job', args: 'jobId [actualPayout]' },
   { cmd: 'demo', desc: 'Bootstrap demo data (happy/failure/both)', args: '[scenario]' },
   { cmd: 'reset', desc: 'Reset all state', args: '' },
+  { cmd: 'deposit', desc: 'Fund the treasury (requires wallet auth)', args: 'amount' },
+  { cmd: 'register', desc: 'Register an agent (requires wallet auth)', args: 'address name trustScore' },
+  { cmd: 'job', desc: 'Create a job (requires wallet auth)', args: 'agentAddress title payout category' },
+  { cmd: 'advance', desc: 'Request credit advance (requires wallet auth)', args: 'agentAddress jobId amount purpose' },
+  { cmd: 'complete', desc: 'Complete a job (requires wallet auth)', args: 'jobId [actualPayout]' },
   { cmd: 'help', desc: 'Show available commands', args: '' },
   { cmd: 'clear', desc: 'Clear terminal', args: '' },
 ];

@@ -10,7 +10,7 @@ export function Header() {
           </div>
         </div>
         <div className="flex items-center gap-4 text-[10px]">
-          <a href="https://trustvault-credit.leaidedev.workers.dev/.well-known/agent.json" target="_blank" rel="noopener"
+          <a href="https://credit.unbrained.club/.well-known/agent.json" target="_blank" rel="noopener"
             className="text-text-muted hover:text-green transition-colors">[agent.json]</a>
           <a href="https://github.com/unbrained-labs/trustvault-credit" target="_blank" rel="noopener"
             className="text-text-muted hover:text-green transition-colors">[github]</a>
