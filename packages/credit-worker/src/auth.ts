@@ -84,17 +84,20 @@ async function verifyHeaders(
   if (isNaN(ts)) return null;
 
   const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - ts) > MAX_AGE_SECONDS) return null;
+  const CLOCK_SKEW_GRACE = 30; // allow 30s of clock skew for future timestamps
+  if (ts > now + CLOCK_SKEW_GRACE) return null; // reject future timestamps
+  if (now - ts > MAX_AGE_SECONDS) return null; // reject expired timestamps
 
-  const message = `trustvault-credit:${address.toLowerCase()}:${timestamp}`;
+  const normalizedAddress = address.toLowerCase();
+  const message = `trustvault-credit:${normalizedAddress}:${timestamp}`;
 
   try {
     const valid = await verifyMessage({
-      address: address as `0x${string}`,
+      address: normalizedAddress as `0x${string}`,
       message,
       signature: signature as `0x${string}`,
     });
-    return valid ? address.toLowerCase() : null;
+    return valid ? normalizedAddress : null;
   } catch {
     return null;
   }

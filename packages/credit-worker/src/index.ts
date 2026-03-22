@@ -434,12 +434,12 @@ app.get("/marketplace/jobs/:jobId/bids", async (c) => {
 });
 
 app.post("/marketplace/jobs/:jobId/award", async (c) => {
-  const { bidId, posterAddress } = await c.req.json<{ bidId: string; posterAddress: string }>();
-  assertAuthorized(c.get("verifiedAddress"), posterAddress);
+  const { bidId } = await c.req.json<{ bidId: string }>();
   return c.json(
     await getAgent(c.env).awardBid({
       jobId: c.req.param("jobId"),
       bidId,
+      callerAddress: c.get("verifiedAddress"),
     }),
   );
 });
@@ -456,7 +456,8 @@ app.post("/treasury/deposit", async (c) => {
   assertAuthorized(c.get("verifiedAddress"), body.lenderAddress);
   body.amount = positiveNumber(body.amount, "amount");
 
-  // When chain is enabled, require on-chain deposit proof
+  // When chain is enabled, require on-chain deposit proof with replay prevention
+  const agent = getAgent(c.env);
   if (isChainEnabled(c.env) && c.env.CREDIT_VAULT) {
     if (!body.depositTxHash) {
       return c.json({
@@ -464,10 +465,15 @@ app.post("/treasury/deposit", async (c) => {
         vaultContract: c.env.CREDIT_VAULT,
       }, 402);
     }
+    const consumed = await agent.isPaymentConsumed(body.depositTxHash) as boolean;
+    if (consumed) {
+      return c.json({ error: "This deposit transaction has already been recorded." }, 409);
+    }
     const verification = await verifyPayment(c.env, body.depositTxHash, c.env.CREDIT_VAULT, body.amount);
     if (!verification?.verified) {
       return c.json({ error: "Deposit verification failed. Transfer must be tUSDC to the vault.", txHash: body.depositTxHash }, 402);
     }
+    await agent.consumePayment(body.depositTxHash, `deposit:${body.lenderAddress}`);
     body.amount = parseFloat(verification.amount);
   }
 
@@ -519,17 +525,19 @@ app.get("/fees", async (c) => {
 app.post("/spend/record", async (c) => {
   const body = await c.req.json<{
     advanceId: string;
-    agentAddress: string;
     category: SpendCategory;
     amount: number;
     vendor: string;
     description: string;
   }>();
-  assertAuthorized(c.get("verifiedAddress"), body.agentAddress);
   body.amount = positiveNumber(body.amount, "amount");
   body.vendor = boundedString(body.vendor, "vendor");
   body.description = boundedString(body.description, "description");
-  return c.json(await getAgent(c.env).recordSpend(body));
+  // Authorization is inside the engine — it checks advance.agentAddress matches caller
+  return c.json(await getAgent(c.env).recordSpend({
+    ...body,
+    callerAddress: c.get("verifiedAddress"),
+  }));
 });
 
 app.get("/spend/:advanceId", async (c) => {

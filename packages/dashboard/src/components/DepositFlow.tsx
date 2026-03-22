@@ -187,12 +187,12 @@ export function DepositFlow({ vault }: { vault: HealthResponse['vault'] | null }
 
           {mode === 'deposit' && amount && (
             <p className="text-[10px] text-text-muted">
-              You'll receive ~{(parseFloat(amount || '0') / sharePrice).toFixed(2)} tvCREDIT shares
+              You'll receive ~{(parseFloat(amount) / sharePrice).toFixed(2)} tvCREDIT shares
             </p>
           )}
           {mode === 'withdraw' && amount && (
             <p className="text-[10px] text-text-muted">
-              You'll receive ~{(parseFloat(amount || '0') * sharePrice).toFixed(2)} tUSDC
+              You'll receive ~{(parseFloat(amount) * sharePrice).toFixed(2)} tUSDC
             </p>
           )}
         </div>

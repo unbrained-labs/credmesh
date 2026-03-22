@@ -348,9 +348,16 @@ export class CreditAgent extends DurableObject<Env> {
   async awardBid(input: {
     jobId: string;
     bidId: string;
+    callerAddress: string;
   }): Promise<{ job: JobReceivable; acceptedBid: Bid; rejectedBids: Bid[] }> {
     await this.init();
     const job = this.requireJob(input.jobId);
+    // Authorization: only the job poster/payer can award
+    const caller = norm(input.callerAddress);
+    const poster = job.postedBy ? norm(job.postedBy) : norm(job.payer);
+    if (caller !== poster && caller !== norm(job.payer)) {
+      throw new Error("Only the job poster can award bids.");
+    }
     if (job.agentAddress) throw new Error("Job is already assigned.");
     const bid = this.state.bids[input.bidId];
     if (!bid) throw new Error(`Unknown bid: ${input.bidId}`);
@@ -388,7 +395,8 @@ export class CreditAgent extends DurableObject<Env> {
 
   // ─── Job Completion & Waterfall ───
 
-  async completeJob(input: { jobId: string; actualPayout?: number; callerAddress?: string }): Promise<{
+  /** @param callerAddress Use "system" for internal/demo calls to bypass authorization */
+  async completeJob(input: { jobId: string; actualPayout?: number; callerAddress: string }): Promise<{
     job: JobReceivable;
     waterfall: WaterfallResult;
     settledAdvances: CreditAdvance[];
@@ -397,12 +405,10 @@ export class CreditAgent extends DurableObject<Env> {
     const job = this.requireJob(input.jobId);
     if (job.status !== "open") throw new Error("Job is not open.");
 
-    // Authorization: only the job's payer or assigned agent can complete
-    if (input.callerAddress) {
-      const caller = norm(input.callerAddress);
-      if (norm(job.payer) !== caller && norm(job.agentAddress) !== caller) {
-        throw new Error("Job can only be completed by its payer or assigned agent.");
-      }
+    // Authorization: only the job's payer, assigned agent, or system can complete
+    const caller = norm(input.callerAddress);
+    if (caller !== "system" && norm(job.payer) !== caller && norm(job.agentAddress) !== caller) {
+      throw new Error("Job can only be completed by its payer or assigned agent.");
     }
 
     // Clamp payout to 2x expected to prevent inflated repayment history
@@ -622,6 +628,7 @@ export class CreditAgent extends DurableObject<Env> {
 
   async recordSpend(input: {
     advanceId: string;
+    callerAddress: string;
     category: SpendCategory;
     amount: number;
     vendor: string;
@@ -630,6 +637,10 @@ export class CreditAgent extends DurableObject<Env> {
     await this.init();
     const advance = this.requireAdvance(input.advanceId);
     if (advance.status !== "active") throw new Error("Advance is not active.");
+    // Authorization: only the advance's agent can record spend
+    if (norm(input.callerAddress) !== norm(advance.agentAddress)) {
+      throw new Error("Only the advance holder can record spend.");
+    }
 
     const policy = advance.spendPolicy;
     if (!policy) throw new Error("Advance has no spend policy.");
@@ -773,7 +784,7 @@ export class CreditAgent extends DurableObject<Env> {
       const data = generateHappyPath();
       const jobIds = await runScenario(data, true);
       for (const comp of data.completions) {
-        await this.completeJob({ jobId: jobIds[comp.jobIndex], actualPayout: comp.actualPayout });
+        await this.completeJob({ jobId: jobIds[comp.jobIndex], actualPayout: comp.actualPayout, callerAddress: "system" });
       }
     }
 
@@ -782,7 +793,7 @@ export class CreditAgent extends DurableObject<Env> {
       const jobIds = await runScenario(data, false);
 
       for (const pc of data.partialCompletions) {
-        await this.completeJob({ jobId: jobIds[pc.jobIndex], actualPayout: pc.actualPayout });
+        await this.completeJob({ jobId: jobIds[pc.jobIndex], actualPayout: pc.actualPayout, callerAddress: "system" });
       }
       for (const def of data.defaults) {
         const targetJobId = jobIds[data.advances[def.advanceIndex].jobIndex];
