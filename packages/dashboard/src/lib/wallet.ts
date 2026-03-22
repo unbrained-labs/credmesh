@@ -59,18 +59,36 @@ export async function connectWallet(): Promise<WalletState> {
   signer = await provider.getSigner();
   const address = await signer.getAddress();
   const network = await provider.getNetwork();
+  const chainId = Number(network.chainId);
+
+  // Must be on Sepolia
+  if (chainId !== 11155111) {
+    return {
+      connected: true,
+      address,
+      chainId,
+      tokenBalance: null,
+      vaultShares: null,
+      shareValue: null,
+    };
+  }
 
   // Read token balance
-  const token = new Contract(TOKEN_ADDRESS, ERC20_ABI, provider);
-  const balance = await token.balanceOf(address);
-  const decimals = await token.decimals();
+  let tokenBalance = '0';
+  try {
+    const token = new Contract(TOKEN_ADDRESS, ERC20_ABI, provider);
+    const balance = await token.balanceOf(address);
+    tokenBalance = formatUnits(balance, 6); // tUSDC has 6 decimals
+  } catch (e) {
+    console.error('Failed to read token balance:', e);
+  }
 
   return {
     connected: true,
     address,
-    chainId: Number(network.chainId),
-    tokenBalance: formatUnits(balance, decimals),
-    vaultShares: null, // Will read if vault is configured
+    chainId,
+    tokenBalance,
+    vaultShares: null,
     shareValue: null,
   };
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from './Card';
 import { connectWallet, depositToVault, withdrawFromVault, disconnectWallet, type WalletState } from '../lib/wallet';
 import type { HealthResponse } from '../api';
@@ -11,6 +11,18 @@ export function DepositFlow({ vault }: { vault: HealthResponse['vault'] | null }
   const [status, setStatus] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [vaultAddress, setVaultAddress] = useState('');
 
+  // Auto-fetch vault address from API
+  useEffect(() => {
+    const BASE = import.meta.env.PROD ? 'https://credit.unbrained.club' : '/api';
+    fetch(`${BASE}/vault/opportunity`)
+      .then(r => r.json())
+      .then(d => {
+        const addr = d?.howToDeposit?.vaultContract;
+        if (addr && addr !== 'not configured') setVaultAddress(addr);
+      })
+      .catch(() => {});
+  }, []);
+
   const connect = async () => {
     setLoading(true);
     setStatus(null);
@@ -18,7 +30,20 @@ export function DepositFlow({ vault }: { vault: HealthResponse['vault'] | null }
       const state = await connectWallet();
       setWallet(state);
       if (state.chainId !== 11155111) {
-        setStatus({ type: 'err', text: 'Switch to Sepolia network in your wallet.' });
+        setStatus({ type: 'err', text: 'Wrong network. Switching to Sepolia...' });
+        // Auto-request network switch
+        try {
+          const ethereum = (window as unknown as Record<string, unknown>).ethereum as { request: (args: Record<string, unknown>) => Promise<unknown> };
+          await ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0xaa36a7' }], // Sepolia
+          });
+          const updated = await connectWallet();
+          setWallet(updated);
+          setStatus(null);
+        } catch {
+          setStatus({ type: 'err', text: 'Please switch to Sepolia (chain ID 11155111) in your wallet.' });
+        }
       }
     } catch (e) {
       setStatus({ type: 'err', text: e instanceof Error ? e.message : 'Connection failed' });
@@ -96,17 +121,9 @@ export function DepositFlow({ vault }: { vault: HealthResponse['vault'] | null }
             <button onClick={disconnect} className="text-red hover:underline">disconnect</button>
           </div>
 
-          {/* Vault address input (needed because it's in secrets) */}
+          {/* Loading vault address */}
           {!vaultAddress && (
-            <div>
-              <p className="text-[10px] text-text-muted mb-1">Vault contract address (from /health endpoint):</p>
-              <input
-                value={vaultAddress}
-                onChange={e => setVaultAddress(e.target.value)}
-                placeholder="0x..."
-                className="w-full bg-bg border border-border px-2 py-1.5 text-xs text-white outline-none focus:border-green placeholder:text-text-muted/40"
-              />
-            </div>
+            <p className="text-[10px] text-amber">Loading vault contract address...</p>
           )}
 
           {/* Mode toggle */}
