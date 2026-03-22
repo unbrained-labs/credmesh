@@ -483,10 +483,21 @@ app.get("/onchain/:address", async (c) => {
   });
 });
 
-// ─── Debug ───
+// ─── Auth Helper ───
 
-app.get("/debug/state", async (c) => {
-  return c.json(await getAgent(c.env).getSnapshot());
+app.get("/auth/info", (c) => {
+  return c.json({
+    scheme: "EIP-191 wallet signature",
+    headers: {
+      "X-Agent-Address": "0xYourWalletAddress",
+      "X-Agent-Signature": "0x... (EIP-191 signature of the message below)",
+      "X-Agent-Timestamp": "Unix seconds (must be within 5 minutes of server time)",
+    },
+    message: "trustvault-credit:{address}:{timestamp}",
+    example: "trustvault-credit:0xabcdef1234567890abcdef1234567890abcdef12:1711234567",
+    note: "GET requests are public. POST/PUT/DELETE require authentication. Sign with any EIP-191 compatible wallet (ethers.js, viem, MetaMask).",
+    readEndpoints: "GET /health, /fees, /bootstrap, /treasury, /timeline, /onchain/:address — no auth needed",
+  });
 });
 
 app.onError((error, c) => {

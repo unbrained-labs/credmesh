@@ -10,7 +10,10 @@ import type { Env } from "./types";
  *   X-Agent-Signature: 0x... (signature of "trustvault-credit:{address}:{timestamp}")
  *   X-Agent-Timestamp: unix seconds
  *
- * If headers are absent, request passes through (graceful degradation for demo/testing).
+ * Behavior:
+ *   - GET requests pass through unauthenticated (read-only endpoints are public)
+ *   - POST/PUT/DELETE require valid wallet signature
+ *   - Verified address is set on context for downstream authorization checks
  */
 
 const MAX_AGE_SECONDS = 300;
@@ -23,40 +26,56 @@ export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Varia
     const signature = c.req.header("X-Agent-Signature");
     const timestamp = c.req.header("X-Agent-Timestamp");
 
-    // No auth headers = unauthenticated request (read-only endpoints still work)
-    if (!address || !signature || !timestamp) {
+    // GET requests are public — read-only endpoints don't need auth
+    if (c.req.method === "GET") {
+      if (address && signature && timestamp) {
+        // If auth headers are provided on GET, validate them (optional enrichment)
+        const verified = await verifyHeaders(address, signature, timestamp);
+        if (verified) c.set("verifiedAddress", verified);
+      }
       await next();
       return;
     }
 
-    const ts = parseInt(timestamp, 10);
-    if (isNaN(ts)) {
-      return c.json({ error: "Invalid timestamp." }, 401);
+    // POST/PUT/DELETE require authentication
+    if (!address || !signature || !timestamp) {
+      return c.json({
+        error: "Authentication required.",
+        hint: "Send X-Agent-Address, X-Agent-Signature, X-Agent-Timestamp headers. Sign message: trustvault-credit:{address}:{timestamp}",
+      }, 401);
     }
 
-    const now = Math.floor(Date.now() / 1000);
-
-    if (Math.abs(now - ts) > MAX_AGE_SECONDS) {
-      return c.json({ error: "Signature expired. Timestamp must be within 5 minutes." }, 401);
+    const verified = await verifyHeaders(address, signature, timestamp);
+    if (!verified) {
+      return c.json({ error: "Invalid or expired signature." }, 401);
     }
 
-    const message = `trustvault-credit:${address.toLowerCase()}:${timestamp}`;
-
-    try {
-      const valid = await verifyMessage({
-        address: address as `0x${string}`,
-        message,
-        signature: signature as `0x${string}`,
-      });
-
-      if (!valid) {
-        return c.json({ error: "Invalid signature." }, 401);
-      }
-    } catch {
-      return c.json({ error: "Signature verification failed." }, 401);
-    }
-
-    c.set("verifiedAddress", address.toLowerCase());
+    c.set("verifiedAddress", verified);
     await next();
   },
 );
+
+async function verifyHeaders(
+  address: string,
+  signature: string,
+  timestamp: string,
+): Promise<string | null> {
+  const ts = parseInt(timestamp, 10);
+  if (isNaN(ts)) return null;
+
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - ts) > MAX_AGE_SECONDS) return null;
+
+  const message = `trustvault-credit:${address.toLowerCase()}:${timestamp}`;
+
+  try {
+    const valid = await verifyMessage({
+      address: address as `0x${string}`,
+      message,
+      signature: signature as `0x${string}`,
+    });
+    return valid ? address.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
