@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh auth:*)",
+      "Bash(gh repo:*)",
+      "Bash(npx wrangler:*)",
+      "Bash(git branch:*)",
+      "Bash(git reset:*)",
+      "Bash(git pull:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npm run:*)",
+      "Bash(curl:*)",
+      "Bash(git push:*)",
+      "WebFetch(domain:synthesis.devfolio.co)",
+      "WebFetch(domain:synthesis.md)",
+      "Bash(python3 -m json.tool)",
+      "Bash(npm create:*)",
+      "Bash(npx vite:*)",
+      "WebFetch(domain:lucide.dev)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(npm install:*)",
+      "Bash(npx tsx:*)",
+      "Bash(git status:*)"
+    ]
+  }
+}

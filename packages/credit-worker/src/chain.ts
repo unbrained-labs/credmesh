@@ -264,6 +264,91 @@ export async function checkIdentityOnchain(
   }
 }
 
+// ── Vault ──
+
+const VAULT_ABI = parseAbi([
+  "function totalAssets() view returns (uint256)",
+  "function totalSupply() view returns (uint256)",
+  "function vaultStats() view returns (uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256)",
+  "function supplyToEscrow(uint256 amount) external",
+  "function recordRepayment(uint256 principal, uint256 fees) external",
+  "function recordDefault(uint256 lossAmount) external",
+]);
+
+export async function getVaultStats(env: Env): Promise<{
+  totalAssets: string;
+  totalShares: string;
+  sharePrice: string;
+  idleBalance: string;
+  inAave: string;
+  inEscrow: string;
+  feesEarned: string;
+  defaultLoss: string;
+} | null> {
+  const clients = getClients(env);
+  if (!clients || !env.CREDIT_VAULT) return null;
+
+  try {
+    const [assets, shares, price, idle, aave, escrow, fees, loss] = await clients.publicClient.readContract({
+      address: env.CREDIT_VAULT as Address,
+      abi: VAULT_ABI,
+      functionName: "vaultStats",
+    });
+    return {
+      totalAssets: formatUnits(assets, 6),
+      totalShares: formatUnits(shares, 6),
+      sharePrice: (Number(price) / 1e6).toFixed(6),
+      idleBalance: formatUnits(idle, 6),
+      inAave: formatUnits(aave, 6),
+      inEscrow: formatUnits(escrow, 6),
+      feesEarned: formatUnits(fees, 6),
+      defaultLoss: formatUnits(loss, 6),
+    };
+  } catch (e) {
+    console.error("Vault stats failed:", e);
+    return null;
+  }
+}
+
+export async function vaultSupplyToEscrow(env: Env, amount: number): Promise<string | null> {
+  const clients = getClients(env);
+  if (!clients || !env.CREDIT_VAULT) return null;
+
+  const hash = await clients.walletClient.writeContract({
+    address: env.CREDIT_VAULT as Address,
+    abi: VAULT_ABI,
+    functionName: "supplyToEscrow",
+    args: [parseUnits(amount.toFixed(2), 6)],
+  });
+  return hash;
+}
+
+export async function vaultRecordRepayment(env: Env, principal: number, fees: number): Promise<string | null> {
+  const clients = getClients(env);
+  if (!clients || !env.CREDIT_VAULT) return null;
+
+  const hash = await clients.walletClient.writeContract({
+    address: env.CREDIT_VAULT as Address,
+    abi: VAULT_ABI,
+    functionName: "recordRepayment",
+    args: [parseUnits(principal.toFixed(2), 6), parseUnits(fees.toFixed(2), 6)],
+  });
+  return hash;
+}
+
+export async function vaultRecordDefault(env: Env, lossAmount: number): Promise<string | null> {
+  const clients = getClients(env);
+  if (!clients || !env.CREDIT_VAULT) return null;
+
+  const hash = await clients.walletClient.writeContract({
+    address: env.CREDIT_VAULT as Address,
+    abi: VAULT_ABI,
+    functionName: "recordDefault",
+    args: [parseUnits(lossAmount.toFixed(2), 6)],
+  });
+  return hash;
+}
+
 // ── Status ──
 
 export function isChainEnabled(env: Env): boolean {

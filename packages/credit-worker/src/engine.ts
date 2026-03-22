@@ -31,7 +31,7 @@ import type {
   TreasuryState,
   WaterfallResult,
 } from "./types";
-import { escrowIssueAdvance, escrowSettle, writeReputation, isChainEnabled, isEscrowEnabled, transferTokens } from "./chain";
+import { escrowIssueAdvance, escrowSettle, writeReputation, isChainEnabled, isEscrowEnabled, transferTokens, vaultRecordRepayment, vaultRecordDefault } from "./chain";
 import { norm, rc } from "./utils";
 
 const DEFAULT_STATE: AgentState = {
@@ -447,6 +447,16 @@ export class CreditAgent extends DurableObject<Env> {
       }
     }
 
+    // Record repayment in vault (updates share value for depositors)
+    if (this.env.CREDIT_VAULT && isChainEnabled(this.env)) {
+      if (waterfall.principalRepaid > 0 || waterfall.feePaid > 0) {
+        await vaultRecordRepayment(this.env, waterfall.principalRepaid, waterfall.feePaid);
+      }
+      if (waterfall.shortfall > 0) {
+        await vaultRecordDefault(this.env, waterfall.shortfall);
+      }
+    }
+
     // Write reputation to ReputationRegistry on-chain
     if (isChainEnabled(this.env)) {
       const hasDefault = activeAdvances.some((a) => a.status === "defaulted");
@@ -502,6 +512,11 @@ export class CreditAgent extends DurableObject<Env> {
     const job = this.state.jobs[advance.jobId];
     if (job && job.status === "open") {
       job.status = "defaulted";
+    }
+
+    // Record loss in vault
+    if (this.env.CREDIT_VAULT && isChainEnabled(this.env)) {
+      await vaultRecordDefault(this.env, lostAmount);
     }
 
     // Write default event to ReputationRegistry (score 0 = negative signal)

@@ -8,6 +8,7 @@ export interface Env {
   AGENT_PRIVATE_KEY?: string;
   TEST_USDC?: string;
   CREDIT_ESCROW?: string;
+  CREDIT_VAULT?: string;
 }
 
 export interface AgentRegistrationInput {

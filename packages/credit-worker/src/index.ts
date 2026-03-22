@@ -4,7 +4,7 @@ import { agentCard } from "./agent-card";
 import { CreditAgent } from "./engine";
 import { listScenarios } from "./demo";
 import { checkIdentityRegistration } from "./erc8004";
-import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getReputation, checkIdentityOnchain, getTokenBalance } from "./chain";
+import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance } from "./chain";
 import { authMiddleware } from "./auth";
 import type { AgentRegistrationInput, Env, SpendCategory, TimelineEvent } from "./types";
 
@@ -54,19 +54,20 @@ app.get("/health", async (c) => {
   const chainEnabled = isChainEnabled(c.env);
   const escrowEnabled = isEscrowEnabled(c.env);
   const escrowStats = escrowEnabled ? await getEscrowStats(c.env) : null;
-  const treasuryBalance = chainEnabled ? await getTreasuryBalance(c.env) : null;
+  const vaultStats = c.env.CREDIT_VAULT ? await getVaultStats(c.env) : null;
   return c.json({
     status: "ok",
     agent: c.env.AGENT_NAME || "TrustVault Credit",
-    version: "0.4.0",
+    version: "0.5.0",
     timestamp: Date.now(),
     chain: {
       enabled: chainEnabled,
       network: chainEnabled ? "sepolia" : null,
       escrowEnabled,
+      vaultEnabled: !!c.env.CREDIT_VAULT,
       escrowBalance: escrowStats?.balance ? `${escrowStats.balance} tUSDC` : null,
-      treasuryBalance: treasuryBalance ? `${treasuryBalance} tUSDC` : null,
     },
+    vault: vaultStats,
   });
 });
 
