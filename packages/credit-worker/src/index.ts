@@ -48,6 +48,70 @@ app.get("/agent_log.json", async (c) => {
   });
 });
 
+// ─── Use Cases & LP Onboarding ───
+
+app.get("/use-cases", (c) => {
+  return c.json({
+    title: "Who uses TrustVault Credit?",
+    forAgents: {
+      headline: "Agents that accept work and need upfront capital",
+      description: "You've been hired for a job. Payment comes after delivery. But you need to spend NOW on compute, APIs, gas, or sub-agents. TrustVault Credit advances you working capital against your guaranteed payout.",
+      examples: [
+        {
+          name: "Trading / Arbitrage Agent",
+          scenario: "Spots a $500 arbitrage between Uniswap and SushiSwap. Needs $400 capital + $5 gas to execute. Profit: $95 in 30 seconds.",
+          howItWorks: "Agent posts the trade as a job (expectedPayout: $500). Requests $405 advance. Executes trade. Repays $405 + $12 fee from the $500 proceeds. Keeps $83 net.",
+          duration: "Minutes",
+          feeRange: "2-3% (flash duration, low risk for proven trader)",
+          whyCredit: "Without credit, agent needs a pre-funded $400 wallet sitting idle between trades. With credit, agent operates with zero capital.",
+        },
+        {
+          name: "Code Generation Agent",
+          scenario: "Hired for a $200 smart contract audit. Needs $30 for Claude API inference, $5 for test deployment gas, $3 for Foundry compute.",
+          howItWorks: "Agent registers, job is created with $200 expected payout. Requests $38 advance for compute. Completes audit. Client pays $200. Waterfall: $38 principal + $1.90 fee repaid. Agent nets $160.10.",
+          duration: "24-48 hours",
+          feeRange: "4-5% (daily duration, moderate risk)",
+          whyCredit: "Agent can accept the job immediately without waiting for a human to pre-fund a wallet.",
+        },
+        {
+          name: "Research / Data Agent",
+          scenario: "Hired to analyze DeFi protocol metrics. Needs $15 for Dune API, $8 for LLM summarization, $2 for report hosting.",
+          howItWorks: "Requests $25 advance against $80 job payout. Completes research. Waterfall repays $25 + $1.25 fee. Agent nets $53.75.",
+          duration: "12-24 hours",
+          feeRange: "3-4%",
+          whyCredit: "Enables agent to take on multiple research jobs simultaneously without pooling capital.",
+        },
+        {
+          name: "Multi-Agent Coordinator",
+          scenario: "Lead agent hired for $500 project. Needs to hire 3 sub-agents at $50 each + $20 compute.",
+          howItWorks: "Requests $170 advance. Pays sub-agents. Completes project. Waterfall repays $170 + $10.20 fee. Agent nets $319.80.",
+          duration: "48-72 hours",
+          feeRange: "5-7% (multi-day, sub-agent spend category)",
+          whyCredit: "The lead agent is the underwriter — its reputation backs the advance. Sub-agents get paid upfront.",
+        },
+      ],
+    },
+    forLPs: {
+      headline: "Earn yield from agent credit fees",
+      description: "Deposit USDC into the ERC-4626 vault. Your capital funds short-duration advances to agents. As they repay with fees, your share price increases. No lockup — withdraw anytime.",
+      yield: {
+        source: "Credit fees from agent advances (3-25% per advance, depending on risk)",
+        estimatedAPY: "30-80% (based on capital utilization and advance frequency)",
+        comparison: "Aave USDC: 3-5% APY. Agent credit fees are higher because durations are shorter and demand is job-specific.",
+        risk: "Default risk. Mitigated by: receivable-backed advances (30% max of job payout), credit scoring, reputation history, and the pool loss surcharge that rebuilds reserves.",
+      },
+      howToDeposit: {
+        step1: "Get tUSDC from the faucet (testnet) or hold USDC (mainnet)",
+        step2: "Approve the vault contract to spend your USDC",
+        step3: "Call vault.deposit(amount, yourAddress) — receive tvCREDIT shares",
+        step4: "Watch your share price increase as fees accumulate",
+        step5: "Withdraw anytime: vault.withdraw(shares, yourAddress, yourAddress)",
+      },
+      currentVault: "Check https://credit.unbrained.club/health for live vault stats (share price, total assets, fees earned)",
+    },
+  });
+});
+
 app.get("/cover.svg", (c) => {
   c.header("Content-Type", "image/svg+xml");
   c.header("Cache-Control", "public, max-age=86400");

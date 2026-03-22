@@ -13,6 +13,7 @@ import { AlertsPanel } from './components/AlertsPanel';
 import { Terminal } from './components/Terminal';
 import { VaultPanel } from './components/VaultPanel';
 import { FeePanel } from './components/FeePanel';
+import { Landing } from './components/Landing';
 
 export default function App() {
   const [portfolio, setPortfolio] = useState<PortfolioReport | null>(null);
@@ -65,6 +66,7 @@ export default function App() {
     <div className="min-h-screen bg-bg">
       <Header />
       <main className="max-w-7xl mx-auto px-4 py-4 space-y-4">
+        <Landing />
         <DemoControls onAction={onDemo} loading={loading} />
         {portfolio && <StatsRow summary={portfolio.summary} />}
 
