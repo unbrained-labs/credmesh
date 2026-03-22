@@ -31,7 +31,7 @@ import type {
   TreasuryState,
   WaterfallResult,
 } from "./types";
-import { escrowIssueAdvance, escrowSettle, writeReputation, isChainEnabled, isEscrowEnabled, transferTokens, vaultRecordRepayment, vaultRecordDefault } from "./chain";
+import { escrowIssueAdvance, escrowSettle, writeReputation, isChainEnabled, isEscrowEnabled, transferTokens, vaultRecordRepayment, vaultRecordDefault, vaultSupplyToEscrow } from "./chain";
 import { splitFee } from "./pricing";
 import { norm, rc } from "./utils";
 
@@ -197,9 +197,13 @@ export class CreditAgent extends DurableObject<Env> {
     this.state.advances[advance.id] = advance;
     this.state.treasury = reserveFunds(this.state.treasury, advance.approvedAmount);
 
-    // Issue advance on-chain: escrow contract or direct transfer
-    // Wrapped in try/catch so demo data works even if chain ops fail
+    // On-chain capital flow: vault → escrow → agent
+    // 1. Supply capital from vault to escrow (if vault enabled)
+    // 2. Escrow issues advance to agent
     try {
+      if (this.env.CREDIT_VAULT && isChainEnabled(this.env)) {
+        await vaultSupplyToEscrow(this.env, advance.approvedAmount + advance.fee);
+      }
       if (isEscrowEnabled(this.env)) {
         const txResult = await escrowIssueAdvance(
           this.env, advance.id, input.agentAddress, advance.approvedAmount, advance.fee,
@@ -382,7 +386,7 @@ export class CreditAgent extends DurableObject<Env> {
 
   // ─── Job Completion & Waterfall ───
 
-  async completeJob(input: { jobId: string; actualPayout?: number }): Promise<{
+  async completeJob(input: { jobId: string; actualPayout?: number; callerAddress?: string }): Promise<{
     job: JobReceivable;
     waterfall: WaterfallResult;
     settledAdvances: CreditAdvance[];
@@ -390,6 +394,16 @@ export class CreditAgent extends DurableObject<Env> {
     await this.init();
     const job = this.requireJob(input.jobId);
     if (job.status !== "open") throw new Error("Job is not open.");
+
+    // Authorization: only the job's payer or assigned agent can complete
+    if (input.callerAddress) {
+      const caller = input.callerAddress.toLowerCase();
+      const isPayer = job.payer.toLowerCase() === caller;
+      const isAgent = job.agentAddress.toLowerCase() === caller;
+      if (!isPayer && !isAgent) {
+        throw new Error("Job can only be completed by its payer or assigned agent.");
+      }
+    }
 
     // Clamp payout to 2x expected to prevent inflated repayment history
     const maxPayout = rc(job.expectedPayout * 2);

@@ -93,7 +93,7 @@ app.get("/use-cases", (c) => {
     },
     forLPs: {
       headline: "Earn yield from agent credit fees",
-      description: "Deposit USDC into the ERC-4626 vault. Your capital funds short-duration advances to agents. As they repay with fees, your share price increases. No lockup — withdraw anytime.",
+      description: "Deposit USDC into the ERC-4626 vault. Your capital funds short-duration advances to agents. As they repay with fees, your share price increases. Withdrawals available up to idle capital (capital deployed in active advances is locked until repayment).",
       yield: {
         source: "Credit fees from agent advances (3-25% per advance, depending on risk)",
         estimatedAPY: "30-80% (based on capital utilization and advance frequency)",
@@ -105,7 +105,7 @@ app.get("/use-cases", (c) => {
         step2: "Click 'Connect Wallet' in the Vault panel",
         step3: "Enter amount → Deposit (wallet handles approve + deposit in one flow)",
         step4: "Receive tvCREDIT shares — share price increases as fees accumulate",
-        step5: "Withdraw anytime from the same panel",
+        step5: "Withdraw idle capital from the same panel (deployed capital unlocks as advances repay)",
       },
       faucet: "Need testnet tUSDC? POST https://credit.unbrained.club/faucet/0xYourAddress",
       currentVault: "Live stats: https://credit.unbrained.club/health",
@@ -136,7 +136,11 @@ app.get("/health", async (c) => {
       vaultEnabled: !!c.env.CREDIT_VAULT,
       escrowBalance: escrowStats?.balance ? `${escrowStats.balance} tUSDC` : null,
     },
-    vault: vaultStats,
+    vault: vaultStats ? {
+      ...vaultStats,
+      maxWithdrawable: vaultStats.idleBalance, // only idle capital is instantly redeemable
+      note: "totalAssets includes capital deployed in escrow. maxWithdrawable shows instantly redeemable amount.",
+    } : null,
   });
 });
 
@@ -211,7 +215,7 @@ app.get("/vault/opportunity", async (c) => {
         { action: "approve", target: "token", method: "approve(vaultAddress, amount)", description: "Allow vault to pull your tUSDC" },
         { action: "deposit", target: "vault", method: "deposit(amount, yourAddress)", description: "Deposit tUSDC, receive tvCREDIT shares" },
       ],
-      withdraw: { method: "redeem(shares, yourAddress, yourAddress)", description: "Burn tvCREDIT shares, receive tUSDC (including accrued yield)" },
+      withdraw: { method: "redeem(shares, yourAddress, yourAddress)", description: "Burn tvCREDIT shares, receive tUSDC (up to idle capital — deployed capital unlocks as advances repay)" },
       abi: {
         deposit: "function deposit(uint256 assets, address receiver) returns (uint256 shares)",
         redeem: "function redeem(uint256 shares, address receiver, address owner) returns (uint256 assets)",
@@ -339,10 +343,12 @@ app.post("/marketplace/jobs", async (c) => {
 
 app.post("/marketplace/jobs/:jobId/complete", async (c) => {
   const { actualPayout } = await c.req.json<{ actualPayout?: number }>();
+  const callerAddress = c.get("verifiedAddress");
   return c.json(
     await getAgent(c.env).completeJob({
       jobId: c.req.param("jobId"),
       actualPayout,
+      callerAddress,
     }),
   );
 });
