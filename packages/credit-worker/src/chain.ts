@@ -7,7 +7,6 @@ import {
   type Address,
   parseUnits,
   formatUnits,
-  toHex,
   pad,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";

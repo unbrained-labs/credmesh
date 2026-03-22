@@ -14,55 +14,23 @@
  * Testnet:    Base Sepolia with USDC (0x036CbD53842c5426634e7929541eC2318f3dCF7e)
  */
 
-import type { MiddlewareHandler } from "hono";
-
-// Re-export x402 types for consumers
-export type { PaymentPayload, PaymentRequired } from "@x402/hono";
-
-/**
- * x402 network identifiers.
- * x402 uses CAIP-2 chain identifiers (eip155:<chainId>).
- */
-export const X402_NETWORKS = {
+/** x402 CAIP-2 chain identifiers. */
+const X402_NETWORKS = {
   baseSepolia: "eip155:84532" as const,
   baseMainnet: "eip155:8453" as const,
   sepolia: "eip155:11155111" as const,
 };
 
-/**
- * USDC contract addresses for x402 (must support EIP-3009).
- */
-export const USDC_ADDRESSES = {
+/** USDC contract addresses for x402 (must support EIP-3009). */
+const USDC_ADDRESSES = {
   baseSepolia: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
   baseMainnet: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
 };
-
-/**
- * Default Coinbase-hosted facilitator.
- */
-export const DEFAULT_FACILITATOR_URL = "https://x402.org/facilitator";
 
 export interface X402Config {
   facilitatorUrl: string;
   network: string;
   payToAddress: string;
-}
-
-/**
- * Create x402 payment middleware for Hono routes.
- * Returns null if x402 is not configured (graceful degradation).
- */
-export function createX402Middleware(config: X402Config | null): MiddlewareHandler | null {
-  if (!config) return null;
-
-  // Dynamic import to avoid bundling x402 when not used
-  return async (c, next) => {
-    // For now, pass through — x402 middleware requires Base deployment
-    // When deployed on Base with real USDC, activate:
-    //   const { paymentMiddlewareFromConfig } = await import("@x402/hono");
-    //   return paymentMiddlewareFromConfig(routes, facilitatorClient)(c, next);
-    await next();
-  };
 }
 
 /**
@@ -72,13 +40,12 @@ export function createX402Middleware(config: X402Config | null): MiddlewareHandl
 export function getX402Config(env: { X402_FACILITATOR_URL?: string; X402_PAY_TO?: string; X402_NETWORK?: string }): X402Config | null {
   const facilitatorUrl = env.X402_FACILITATOR_URL;
   const payTo = env.X402_PAY_TO;
-  const network = env.X402_NETWORK;
 
   if (!facilitatorUrl || !payTo) return null;
 
   return {
     facilitatorUrl,
-    network: network ?? X402_NETWORKS.baseSepolia,
+    network: env.X402_NETWORK ?? X402_NETWORKS.baseSepolia,
     payToAddress: payTo,
   };
 }
@@ -87,7 +54,7 @@ export function getX402Config(env: { X402_FACILITATOR_URL?: string; X402_PAY_TO?
  * Generate x402 payment instructions for a client.
  * Clients use these instructions to sign a payment authorization.
  */
-export function paymentInstructions(config: X402Config, amount: number, description: string) {
+export function paymentInstructions(config: X402Config, amount: number, description: string): Record<string, unknown> {
   return {
     x402Version: 2,
     scheme: "exact",

@@ -26,7 +26,15 @@
       "Bash(BASE=\"https://trustvault-credit.leaidedev.workers.dev\")",
       "Bash(python3 -c \"import json,sys; print\\(json.load\\(sys.stdin\\)[''''message'''']\\)\")",
       "Bash(python3 -c \"import json,sys; print\\(''''Registered:'''', json.load\\(sys.stdin\\)[''''name'''']\\)\")",
-      "Bash(python3 -c \"import json,sys; print\\(json.dumps\\(json.load\\(sys.stdin\\), indent=2\\)\\)\")"
+      "Bash(python3 -c \"import json,sys; print\\(json.dumps\\(json.load\\(sys.stdin\\), indent=2\\)\\)\")",
+      "Bash(BASE=\"https://trustvault-credit.leaidedev.workers.dev\" echo \"=== Test: negative amount rejected ===\" curl -s -X POST \"$BASE/treasury/deposit\" -H \"Content-Type: application/json\" -d '{\"\"\"\"lenderAddress\"\"\"\":\"\"\"\"0x0000000000000000000000000000000000000001\"\"\"\",\"\"\"\"amount\"\"\"\":-500}')",
+      "Bash(python3 -c \"import json,sys; print\\(json.load\\(sys.stdin\\)\\)\" __NEW_LINE_1063c572f330873d__ echo \"\" echo \"=== Test: NaN rejected ===\" curl -s -X POST \"$BASE/treasury/deposit\" -H \"Content-Type: application/json\" -d '{\"\"\"\"lenderAddress\"\"\"\":\"\"\"\"0x0000000000000000000000000000000000000001\"\"\"\",\"\"\"\"amount\"\"\"\":\"\"\"\"not_a_number\"\"\"\"}')",
+      "Bash(BASE=\"https://trustvault-credit.leaidedev.workers.dev\" echo \"=== Health ===\" curl -s \"$BASE/health\")",
+      "Bash(python3 -c \"import json,sys; print\\(json.dumps\\(json.load\\(sys.stdin\\), indent=2\\)\\)\" echo \"\" echo \"=== Fees endpoint ===\" curl -s \"$BASE/fees\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f''''Model: {d[\"\"model\"\"]}''''\\); print\\(f''''Protocol: {d[\"\"protocolFeePercent\"\"]}''''\\)\" echo \"\" echo \"=== Agent card ===\" curl -s \"$BASE/.well-known/agent.json\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f''''Name: {d.get\\(name,?\\)}''''\\); print\\(f''''URL: {d.get\\(url,?\\)}''''\\)\")",
+      "Bash(python3 -c \":*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\(''''dependencies'''',{}\\), indent=2\\)\\)\")"
     ]
   }
 }

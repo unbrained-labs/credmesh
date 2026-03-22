@@ -7,7 +7,7 @@ import { checkIdentityRegistration } from "./erc8004";
 import { isChainEnabled, isEscrowEnabled, getAgentWallet, getTreasuryBalance, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens } from "./chain";
 import { authMiddleware } from "./auth";
 import { computeFee, PROTOCOL_FEE_BPS } from "./pricing";
-import { positiveNumber, nonNegativeNumber, boundedString } from "./validate";
+import { positiveNumber, boundedString } from "./validate";
 import { getX402Config, paymentInstructions } from "./x402";
 import type { AgentRegistrationInput, Env, SpendCategory, TimelineEvent } from "./types";
 
