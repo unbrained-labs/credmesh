@@ -13,6 +13,7 @@ import { getPaymentMethods } from "./payments";
 import { mppGate, isMppEnabled } from "./mpp";
 import { landingHTML } from "./landing";
 import { getActiveChains, getChainConfig, getChainClients, explorerUrl } from "./chains";
+import { respond } from "./html-wrap";
 import type { AgentRegistrationInput, Env, PortfolioReport, RiskReport, SpendCategory, TimelineEvent, TreasuryState } from "./types";
 
 export { CreditAgent };
@@ -183,7 +184,7 @@ app.get("/vault/opportunity", async (c) => {
     : 0;
   const estimatedAPY = avgFeeRate * 365 * Math.max(utilization, 0.1);
 
-  return c.json({
+  const data = {
     type: "yield-opportunity",
     protocol: "TrustVault Credit",
     asset: "tUSDC",
@@ -246,6 +247,11 @@ app.get("/vault/opportunity", async (c) => {
       portfolioRisk: "/dashboard/risk",
       position: "/vault/position/{yourAddress}",
     },
+  };
+  return respond(c, data, {
+    title: "Vault Yield Opportunity",
+    description: "Live yield data for TrustVault Credit liquidity providers. Deposit USDC, earn fees from agent credit advances.",
+    cta: { label: "Connect Wallet & Deposit", href: "https://trustvault-dashboard.pages.dev" },
   });
 });
 
@@ -555,7 +561,7 @@ app.get("/fees", async (c) => {
   const sampleBreakdown = computeFee(sampleAdvance, 24, 1.0, 1.0, treasury);
   const riskyBreakdown = computeFee(sampleAdvance, 24, 0.5, 0.7, treasury);
 
-  return c.json({
+  const data = {
     model: "dynamic-utilization",
     protocolFeeBps: PROTOCOL_FEE_BPS,
     protocolFeePercent: `${(PROTOCOL_FEE_BPS / 100).toFixed(1)}%`,
@@ -578,6 +584,10 @@ app.get("/fees", async (c) => {
         ...riskyBreakdown,
       },
     },
+  };
+  return respond(c, data, {
+    title: "Dynamic Fee Model",
+    description: "Aave-style utilization curve with duration, risk, and pool loss components. 2% floor, 25% cap.",
   });
 });
 

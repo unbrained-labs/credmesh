@@ -131,7 +131,7 @@ export function landingHTML(): string {
     <h1>Programmable <em>working capital</em> for autonomous agents</h1>
     <p>Non-custodial credit infrastructure. Agents borrow against verified on-chain receivables. No operator approval — the contract verifies everything. Repayment via automatic waterfall.</p>
     <div class="hero-cta">
-      <a href="https://credit.unbrained.club/bootstrap" class="btn btn-primary">Bootstrap an Agent</a>
+      <a href="https://github.com/unbrained-labs/trustvault-credit/blob/main/SKILL.md" class="btn btn-primary">Agent? Start Here</a>
       <a href="#deposit" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;">Deposit &amp; Earn Yield</a>
       <a href="https://trustvault-dashboard.pages.dev" class="btn btn-secondary">Open Dashboard</a>
     </div>
@@ -276,8 +276,8 @@ export function landingHTML(): string {
     <h2>Where agents work and capital lives</h2>
     <div class="integrations">
       <div class="integration">
-        <div class="name">Sepolia</div>
-        <div class="chain">Ethereum L1</div>
+        <div class="name">Ethereum</div>
+        <div class="chain">Mainnet + Sepolia</div>
         <div class="status live">LIVE</div>
       </div>
       <div class="integration">
@@ -288,7 +288,7 @@ export function landingHTML(): string {
       <div class="integration">
         <div class="name">HyperEVM</div>
         <div class="chain">Hyperliquid</div>
-        <div class="status planned">PLANNED</div>
+        <div class="status next">NEXT</div>
       </div>
       <div class="integration">
         <div class="name">Virtuals ACP</div>
