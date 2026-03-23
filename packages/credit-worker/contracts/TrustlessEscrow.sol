@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -12,38 +12,54 @@ import "./interfaces/ICreditOracle.sol";
  * @notice Non-custodial credit escrow. Advances are issued automatically
  *         when on-chain conditions are met. No operator approval needed.
  *
- * The operator (deployer) can:
- *   - Register/remove receivable oracles (which escrow sources are trusted)
+ * Governance can:
+ *   - Register/remove receivable oracles (with timelock)
+ *   - Set credit oracle (with timelock)
  *   - Set credit parameters (advance ratio, min score, fee rate)
- *   - Set the credit oracle address
+ *   - Transfer governance (2-step: propose + accept)
  *   - NOT approve or deny individual advances
- *   - NOT withdraw deposited capital (only LPs can, via the vault)
+ *   - NOT withdraw deposited capital
  *   - NOT pause the contract
- *
- * Anyone can:
- *   - Deposit capital (becomes available for advances)
- *   - Request an advance (if on-chain conditions pass)
- *   - Settle a completed receivable (triggers waterfall)
  */
 contract TrustlessEscrow is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
+    // ─── Constants ───
+
+    uint256 public constant TIMELOCK_DELAY = 48 hours;
+    uint256 public constant MIN_CREDIT_SCORE_FLOOR = 10;
+    uint256 public constant MAX_ADVANCE_RATIO_CAP = 5000; // 50%
+    uint256 public constant MAX_FEE_CAP = 2500; // 25%
+
     // ─── Immutables ───
 
     IERC20 public immutable token;
-    address public governance; // transferable — can move to multisig, DAO, token governance
 
-    // ─── Parameters (deployer can adjust, but cannot use to block advances) ───
+    // ─── Governance (2-step transfer) ───
+
+    address public governance;
+    address public pendingGovernance;
+
+    // ─── Parameters ───
 
     ICreditOracle public creditOracle;
-    uint256 public maxAdvanceRatioBps;  // e.g., 3000 = 30% of receivable
-    uint256 public minCreditScore;      // e.g., 45
-    uint256 public feeBps;              // e.g., 500 = 5% flat fee
+    uint256 public maxAdvanceRatioBps;
+    uint256 public minCreditScore;
+    uint256 public feeBps;
+    uint256 public hardCapPerAdvance; // absolute max per advance, independent of oracle
+
+    // ─── Timelocked Changes ───
+
+    struct PendingChange {
+        address target;
+        uint256 executeAfter; // 0 = no pending change
+    }
+
+    mapping(bytes32 => PendingChange) public pendingChanges;
 
     // ─── Oracle Registry ───
 
     mapping(address => bool) public trustedOracles;
-    address[] public oracleList;
 
     // ─── Advance State ───
 
@@ -57,12 +73,12 @@ contract TrustlessEscrow is ReentrancyGuard {
         bool settled;
     }
 
-    mapping(bytes32 => Advance) public advances;  // advanceId => Advance
-    mapping(address => uint256) public exposure;   // agent => outstanding principal
-    mapping(bytes32 => bool) public usedReceivables; // receivableId => used (prevents double-advance)
+    mapping(bytes32 => Advance) public advances;
+    mapping(address => uint256) public exposure;
+    mapping(bytes32 => bool) public usedReceivables;
 
-    uint256 public totalDeposited;   // cumulative (never decremented)
-    uint256 public totalAdvanced;    // cumulative (never decremented)
+    uint256 public totalDeposited;   // cumulative
+    uint256 public totalAdvanced;    // cumulative
     uint256 public totalRepaid;
     uint256 public totalFeesEarned;
 
@@ -71,8 +87,11 @@ contract TrustlessEscrow is ReentrancyGuard {
     event Deposited(address indexed depositor, uint256 amount);
     event AdvanceIssued(bytes32 indexed advanceId, address indexed agent, address oracle, bytes32 receivableId, uint256 principal, uint256 fee);
     event Settled(bytes32 indexed advanceId, address indexed agent, uint256 principalRepaid, uint256 feeRepaid, uint256 agentRemainder);
-    event OracleRegistered(address indexed oracle);
-    event OracleRemoved(address indexed oracle);
+    event ChangeProposed(bytes32 indexed changeId, address target, uint256 executeAfter);
+    event ChangeExecuted(bytes32 indexed changeId, address target);
+    event ChangeCancelled(bytes32 indexed changeId);
+    event GovernanceProposed(address indexed newGovernance);
+    event GovernanceTransferred(address indexed oldGovernance, address indexed newGovernance);
     event ParametersUpdated(uint256 maxAdvanceRatioBps, uint256 minCreditScore, uint256 feeBps);
 
     // ─── Modifiers ───
@@ -89,66 +108,109 @@ contract TrustlessEscrow is ReentrancyGuard {
         address _creditOracle,
         uint256 _maxAdvanceRatioBps,
         uint256 _minCreditScore,
-        uint256 _feeBps
+        uint256 _feeBps,
+        uint256 _hardCapPerAdvance
     ) {
+        require(_token != address(0), "zero token");
+        require(_creditOracle != address(0), "zero oracle");
+        require(_maxAdvanceRatioBps <= MAX_ADVANCE_RATIO_CAP, "ratio too high");
+        require(_minCreditScore >= MIN_CREDIT_SCORE_FLOOR, "score too low");
+        require(_feeBps <= MAX_FEE_CAP, "fee too high");
+        require(_hardCapPerAdvance > 0, "zero cap");
+
         token = IERC20(_token);
         governance = msg.sender;
         creditOracle = ICreditOracle(_creditOracle);
         maxAdvanceRatioBps = _maxAdvanceRatioBps;
         minCreditScore = _minCreditScore;
         feeBps = _feeBps;
+        hardCapPerAdvance = _hardCapPerAdvance;
     }
 
-    // ─── Deployer: Parameter Management (cannot block individual advances) ───
+    // ─── Governance: 2-Step Transfer ───
 
-    function registerOracle(address oracle) external onlyGovernance {
-        require(!trustedOracles[oracle], "already registered");
+    function proposeGovernance(address newGovernance) external onlyGovernance {
+        require(newGovernance != address(0), "zero address");
+        pendingGovernance = newGovernance;
+        emit GovernanceProposed(newGovernance);
+    }
+
+    function acceptGovernance() external {
+        require(msg.sender == pendingGovernance, "not pending");
+        emit GovernanceTransferred(governance, msg.sender);
+        governance = msg.sender;
+        pendingGovernance = address(0);
+    }
+
+    // ─── Governance: Timelocked Oracle/Credit Oracle Changes ───
+
+    function proposeOracleAdd(address oracle) external onlyGovernance {
+        bytes32 id = keccak256(abi.encodePacked("addOracle", oracle));
+        pendingChanges[id] = PendingChange(oracle, block.timestamp + TIMELOCK_DELAY);
+        emit ChangeProposed(id, oracle, block.timestamp + TIMELOCK_DELAY);
+    }
+
+    function executeOracleAdd(address oracle) external onlyGovernance {
+        bytes32 id = keccak256(abi.encodePacked("addOracle", oracle));
+        PendingChange storage pc = pendingChanges[id];
+        require(pc.executeAfter > 0, "not proposed");
+        require(block.timestamp >= pc.executeAfter, "timelock active");
+        require(pc.target == oracle, "target mismatch");
+
         trustedOracles[oracle] = true;
-        oracleList.push(oracle);
-        emit OracleRegistered(oracle);
+        delete pendingChanges[id];
+        emit ChangeExecuted(id, oracle);
     }
 
     function removeOracle(address oracle) external onlyGovernance {
-        require(trustedOracles[oracle], "not registered");
+        // Removal is immediate (prevents further advances against this oracle)
+        // This is safe: it can only block new advances, not steal existing ones
         trustedOracles[oracle] = false;
-
-        // Remove from oracleList so oracleCount() stays accurate
-        uint256 len = oracleList.length;
-        for (uint256 i = 0; i < len; i++) {
-            if (oracleList[i] == oracle) {
-                oracleList[i] = oracleList[len - 1];
-                oracleList.pop();
-                break;
-            }
-        }
-
-        emit OracleRemoved(oracle);
     }
+
+    function proposeCreditOracle(address newOracle) external onlyGovernance {
+        require(newOracle != address(0), "zero oracle");
+        bytes32 id = keccak256(abi.encodePacked("creditOracle", newOracle));
+        pendingChanges[id] = PendingChange(newOracle, block.timestamp + TIMELOCK_DELAY);
+        emit ChangeProposed(id, newOracle, block.timestamp + TIMELOCK_DELAY);
+    }
+
+    function executeCreditOracle(address newOracle) external onlyGovernance {
+        bytes32 id = keccak256(abi.encodePacked("creditOracle", newOracle));
+        PendingChange storage pc = pendingChanges[id];
+        require(pc.executeAfter > 0, "not proposed");
+        require(block.timestamp >= pc.executeAfter, "timelock active");
+        require(pc.target == newOracle, "target mismatch");
+
+        creditOracle = ICreditOracle(newOracle);
+        delete pendingChanges[id];
+        emit ChangeExecuted(id, newOracle);
+    }
+
+    function cancelPendingChange(bytes32 changeId) external onlyGovernance {
+        delete pendingChanges[changeId];
+        emit ChangeCancelled(changeId);
+    }
+
+    // ─── Governance: Parameters (immediate — bounded by caps) ───
 
     function setParameters(
         uint256 _maxAdvanceRatioBps,
         uint256 _minCreditScore,
         uint256 _feeBps
     ) external onlyGovernance {
-        require(_maxAdvanceRatioBps <= 5000, "ratio too high"); // max 50%
-        require(_feeBps <= 2500, "fee too high"); // max 25%
+        require(_maxAdvanceRatioBps <= MAX_ADVANCE_RATIO_CAP, "ratio too high");
+        require(_minCreditScore >= MIN_CREDIT_SCORE_FLOOR, "score too low");
+        require(_feeBps <= MAX_FEE_CAP, "fee too high");
         maxAdvanceRatioBps = _maxAdvanceRatioBps;
         minCreditScore = _minCreditScore;
         feeBps = _feeBps;
         emit ParametersUpdated(_maxAdvanceRatioBps, _minCreditScore, _feeBps);
     }
 
-    function setCreditOracle(address _creditOracle) external onlyGovernance {
-        creditOracle = ICreditOracle(_creditOracle);
-    }
-
-    /**
-     * @notice Transfer governance to a new address (multisig, DAO, token contract).
-     *         This is a one-way transfer — the new address becomes the sole governor.
-     */
-    function transferGovernance(address newGovernance) external onlyGovernance {
-        require(newGovernance != address(0), "zero address");
-        governance = newGovernance;
+    function setHardCap(uint256 _hardCap) external onlyGovernance {
+        require(_hardCap > 0, "zero cap");
+        hardCapPerAdvance = _hardCap;
     }
 
     // ─── Anyone: Deposit Capital ───
@@ -162,50 +224,43 @@ contract TrustlessEscrow is ReentrancyGuard {
 
     // ─── Anyone: Request Advance (if on-chain conditions pass) ───
 
-    /**
-     * @notice Request an advance against a verified on-chain receivable.
-     *         No operator approval needed. The contract verifies all conditions.
-     * @param oracle         Registered receivable oracle to query
-     * @param receivableId   Identifier of the receivable (bounty ID, job ID, etc.)
-     * @param requestedAmount How much to advance (must be ≤ maxAdvanceRatio * receivable)
-     */
     function requestAdvance(
         address oracle,
         bytes32 receivableId,
         uint256 requestedAmount
     ) external nonReentrant returns (bytes32 advanceId) {
-        // 1. Oracle must be trusted
         require(trustedOracles[oracle], "untrusted oracle");
+        require(requestedAmount > 0, "zero amount");
+        require(requestedAmount <= hardCapPerAdvance, "exceeds hard cap");
 
-        // 2. Receivable must exist, be funded, and belong to the caller
+        // Verify receivable
         (bool exists, address beneficiary, uint256 amount, bool settled) =
             IReceivableOracle(oracle).getReceivable(receivableId);
         require(exists, "receivable not found");
         require(!settled, "receivable already settled");
         require(beneficiary == msg.sender, "not your receivable");
-
-        // 3. No double-advance on same receivable
         require(!usedReceivables[receivableId], "receivable already used");
 
-        // 4. Amount within limits
+        // Amount within ratio
         uint256 maxAdvance = (amount * maxAdvanceRatioBps) / 10000;
         require(requestedAmount <= maxAdvance, "exceeds advance ratio");
-        require(requestedAmount > 0, "zero amount");
 
-        // 5. Credit check
-        (uint256 score, uint256 totalExposure, uint256 maxExposure) =
-            creditOracle.getCredit(msg.sender);
+        // Update exposure BEFORE credit check (prevents TOCTOU race)
+        exposure[msg.sender] += requestedAmount;
+
+        // Credit check (reads updated exposure)
+        (uint256 score,, uint256 maxExposure) = creditOracle.getCredit(msg.sender);
         require(score >= minCreditScore, "credit score too low");
-        require(totalExposure + requestedAmount <= maxExposure, "exposure limit exceeded");
+        require(exposure[msg.sender] <= maxExposure, "exposure limit exceeded");
 
-        // 6. Sufficient liquidity
+        // Sufficient liquidity
         require(token.balanceOf(address(this)) >= requestedAmount, "insufficient liquidity");
 
-        // 7. Calculate fee
+        // Calculate fee
         uint256 fee = (requestedAmount * feeBps) / 10000;
 
-        // 8. Create advance
-        advanceId = keccak256(abi.encodePacked(msg.sender, oracle, receivableId, block.timestamp));
+        // Create advance
+        advanceId = keccak256(abi.encodePacked(msg.sender, oracle, receivableId, block.timestamp, block.prevrandao));
         advances[advanceId] = Advance({
             agent: msg.sender,
             oracle: oracle,
@@ -217,27 +272,22 @@ contract TrustlessEscrow is ReentrancyGuard {
         });
 
         usedReceivables[receivableId] = true;
-        exposure[msg.sender] += requestedAmount;
         totalAdvanced += requestedAmount;
 
-        // 9. Transfer tokens to agent
+        // Transfer tokens to agent
         token.safeTransfer(msg.sender, requestedAmount);
 
         emit AdvanceIssued(advanceId, msg.sender, oracle, receivableId, requestedAmount, fee);
     }
 
-    // ─── Anyone: Settle Advance (repay from receivable payout) ───
+    // ─── Agent or Funder: Settle Advance ───
 
-    /**
-     * @notice Settle an advance. Caller sends the payout amount, contract
-     *         runs waterfall: principal → fees → remainder to agent.
-     * @param advanceId The advance to settle
-     * @param payoutAmount Total payout being sent
-     */
     function settle(bytes32 advanceId, uint256 payoutAmount) external nonReentrant {
         Advance storage adv = advances[advanceId];
         require(adv.agent != address(0), "unknown advance");
         require(!adv.settled, "already settled");
+        // Must repay at least the principal
+        require(payoutAmount >= adv.principal, "must repay at least principal");
 
         // Pull payout tokens
         token.safeTransferFrom(msg.sender, address(this), payoutAmount);
@@ -245,7 +295,7 @@ contract TrustlessEscrow is ReentrancyGuard {
         uint256 remaining = payoutAmount;
 
         // Waterfall: principal first
-        uint256 principalRepaid = remaining >= adv.principal ? adv.principal : remaining;
+        uint256 principalRepaid = adv.principal;
         remaining -= principalRepaid;
         totalRepaid += principalRepaid;
 
@@ -280,9 +330,5 @@ contract TrustlessEscrow is ReentrancyGuard {
     ) {
         Advance storage adv = advances[advanceId];
         return (adv.agent, adv.oracle, adv.receivableId, adv.principal, adv.fee, adv.settled);
-    }
-
-    function oracleCount() external view returns (uint256) {
-        return oracleList.length;
     }
 }

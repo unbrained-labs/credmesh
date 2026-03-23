@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.20;
 
 import "../interfaces/ICreditOracle.sol";
 
@@ -8,15 +8,21 @@ import "../interfaces/ICreditOracle.sol";
  * @notice Credit oracle that reads from an ERC-8004 ReputationRegistry.
  *
  * Score = min(reputation_score, 100)
- * maxExposure = score * exposureMultiplier (e.g., score 80 * 10 = 800 USDC max)
- *
- * Reads totalExposure from the TrustlessEscrow contract directly.
+ * maxExposure = score * exposureMultiplier
  */
 contract ReputationCreditOracle is ICreditOracle {
     IReputationRegistry public immutable reputationRegistry;
     address public immutable escrow;
-    uint256 public exposureMultiplier; // in token units per score point
+    uint256 public exposureMultiplier;
     address public governance;
+    address public pendingGovernance;
+
+    uint256 public constant MIN_MULTIPLIER = 1;
+    uint256 public constant MAX_MULTIPLIER = 100_000e6; // 100K USDC per score point max
+
+    event ExposureMultiplierUpdated(uint256 oldValue, uint256 newValue);
+    event GovernanceProposed(address indexed newGovernance);
+    event GovernanceTransferred(address indexed oldGovernance, address indexed newGovernance);
 
     modifier onlyGovernance() {
         require(msg.sender == governance, "not governance");
@@ -28,6 +34,9 @@ contract ReputationCreditOracle is ICreditOracle {
         address _escrow,
         uint256 _exposureMultiplier
     ) {
+        require(_reputationRegistry != address(0), "zero registry");
+        require(_escrow != address(0), "zero escrow");
+        require(_exposureMultiplier >= MIN_MULTIPLIER && _exposureMultiplier <= MAX_MULTIPLIER, "multiplier out of range");
         reputationRegistry = IReputationRegistry(_reputationRegistry);
         escrow = _escrow;
         exposureMultiplier = _exposureMultiplier;
@@ -35,12 +44,22 @@ contract ReputationCreditOracle is ICreditOracle {
     }
 
     function setExposureMultiplier(uint256 _multiplier) external onlyGovernance {
+        require(_multiplier >= MIN_MULTIPLIER && _multiplier <= MAX_MULTIPLIER, "out of range");
+        emit ExposureMultiplierUpdated(exposureMultiplier, _multiplier);
         exposureMultiplier = _multiplier;
     }
 
-    function transferGovernance(address newGovernance) external onlyGovernance {
+    function proposeGovernance(address newGovernance) external onlyGovernance {
         require(newGovernance != address(0), "zero address");
-        governance = newGovernance;
+        pendingGovernance = newGovernance;
+        emit GovernanceProposed(newGovernance);
+    }
+
+    function acceptGovernance() external {
+        require(msg.sender == pendingGovernance, "not pending");
+        emit GovernanceTransferred(governance, msg.sender);
+        governance = msg.sender;
+        pendingGovernance = address(0);
     }
 
     function getCredit(address agent) external view override returns (

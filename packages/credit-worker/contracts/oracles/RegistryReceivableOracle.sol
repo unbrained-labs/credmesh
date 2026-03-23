@@ -1,24 +1,23 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.20;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interfaces/IReceivableOracle.sol";
 
 /**
  * @title RegistryReceivableOracle
- * @notice A receivable oracle backed by on-chain registrations.
- *
- * Use cases:
- *   - Our own marketplace jobs (registered when job is created + funded)
- *   - Any off-chain receivable that has been verified and registered
- *   - Bridge to external escrow systems (adapter pattern)
- *
- * For native on-chain escrows (Claw Earn, etc.), write a direct adapter
- * that reads their contract state instead of using this registry.
+ * @notice A receivable oracle backed by on-chain fund locking.
  *
  * Registration requires the receivable to be funded (tokens locked here).
  * This ensures the oracle only reports receivables backed by real capital.
+ *
+ * For native on-chain escrows (Claw Earn, etc.), write a direct adapter
+ * that reads their contract state instead of using this registry.
  */
 contract RegistryReceivableOracle is IReceivableOracle {
+    using SafeERC20 for IERC20;
+
     struct Receivable {
         address beneficiary;
         address funder;
@@ -34,22 +33,16 @@ contract RegistryReceivableOracle is IReceivableOracle {
     event ReceivableSettled(bytes32 indexed id, address indexed beneficiary, uint256 amount);
 
     constructor(address _token) {
+        require(_token != address(0), "zero token");
         token = IERC20(_token);
     }
 
-    /**
-     * @notice Register a receivable by locking funds.
-     *         Anyone can fund a receivable for any beneficiary.
-     * @param id          Unique receivable identifier
-     * @param beneficiary Who will receive the payout (the worker/agent)
-     * @param amount      How much to escrow
-     */
     function register(bytes32 id, address beneficiary, uint256 amount) external {
         require(!receivables[id].exists, "already exists");
         require(amount > 0, "zero amount");
         require(beneficiary != address(0), "zero beneficiary");
 
-        // State update before external call (checks-effects-interactions)
+        // State update before external call (CEI pattern)
         receivables[id] = Receivable({
             beneficiary: beneficiary,
             funder: msg.sender,
@@ -58,15 +51,10 @@ contract RegistryReceivableOracle is IReceivableOracle {
             settled: false
         });
 
-        require(token.transferFrom(msg.sender, address(this), amount), "transfer failed");
-
+        token.safeTransferFrom(msg.sender, address(this), amount);
         emit ReceivableRegistered(id, beneficiary, msg.sender, amount);
     }
 
-    /**
-     * @notice Mark a receivable as settled and release funds to beneficiary.
-     *         Only the funder can settle (they confirm work was delivered).
-     */
     function settle(bytes32 id) external {
         Receivable storage r = receivables[id];
         require(r.exists, "not found");
@@ -74,8 +62,7 @@ contract RegistryReceivableOracle is IReceivableOracle {
         require(msg.sender == r.funder, "only funder can settle");
 
         r.settled = true;
-        require(token.transfer(r.beneficiary, r.amount), "transfer failed");
-
+        token.safeTransfer(r.beneficiary, r.amount);
         emit ReceivableSettled(id, r.beneficiary, r.amount);
     }
 
@@ -90,9 +77,4 @@ contract RegistryReceivableOracle is IReceivableOracle {
         Receivable storage r = receivables[receivableId];
         return (r.exists, r.beneficiary, r.amount, r.settled);
     }
-}
-
-interface IERC20 {
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-    function transfer(address to, uint256 amount) external returns (bool);
 }
