@@ -12,49 +12,40 @@ import "../interfaces/IReceivableOracle.sol";
  * The precompile addresses (0x0801, 0x0802) are HyperEVM system contracts
  * and do not exist on other EVM chains.
  *
- * Precompile addresses:
- *   0x0801 — Spot balance (returns a user's spot token balance on HyperCore)
- *   0x0802 — Vault equity  (returns total equity of a HyperCore vault)
- *
- * Gas cost per precompile read: 2000 + 65 * (input_len + output_len)
- *
- * receivableId encoding: keccak256(abi.encode(agentAddress, assetType))
- *   assetType 0 = spot balance
- *   assetType 1 = vault equity
- *
- * Positions are ongoing (not one-shot), so settled is always false.
+ * Anti-flash protection: agents must confirm their balance at least
+ * MIN_BALANCE_AGE blocks before getReceivable reports exists=true.
+ * This prevents flash-loan manipulation of the oracle.
  */
 contract HyperliquidReceivableOracle is IReceivableOracle {
 
-    // ─── Asset type constants ───
+    // ─── Constants ───
 
-    uint8 public constant ASSET_TYPE_SPOT  = 0;
-    uint8 public constant ASSET_TYPE_VAULT = 1;
-
-    // ─── HyperEVM read precompile addresses ───
+    uint8   public constant ASSET_TYPE_SPOT  = 0;
+    uint8   public constant ASSET_TYPE_VAULT = 1;
+    uint256 public constant MIN_BALANCE_AGE  = 100; // ~200 seconds at 2s/block
 
     address private constant SPOT_PRECOMPILE  = 0x0000000000000000000000000000000000000801;
     address private constant VAULT_PRECOMPILE = 0x0000000000000000000000000000000000000802;
 
-    // ─── Reverse lookup: receivableId -> encoded params ───
-
-    /// @notice Maps a receivableId to the (agent, assetType) that produced it.
-    ///         Must be populated via `register` before `getReceivable` returns exists=true.
-    mapping(bytes32 => RegisteredAgent) public agents;
+    // ─── State ───
 
     struct RegisteredAgent {
         address agent;
         uint8   assetType;
         bool    registered;
+        uint256 confirmedAtBlock; // block when balance was first confirmed > 0
+        uint256 confirmedAmount;  // balance at confirmation time
     }
 
+    mapping(bytes32 => RegisteredAgent) public agents;
+
     event AgentRegistered(bytes32 indexed receivableId, address indexed agent, uint8 assetType);
+    event BalanceConfirmed(bytes32 indexed receivableId, address indexed agent, uint256 amount, uint256 blockNumber);
 
     // ─── Registration ───
 
     /**
-     * @notice Register an (agent, assetType) pair so the oracle can look it up
-     *         by receivableId. Anyone can register; this is purely informational.
+     * @notice Register an (agent, assetType) pair. Permissionless and idempotent.
      */
     function register(address agent, uint8 assetType) external {
         require(agent != address(0), "zero agent");
@@ -65,68 +56,92 @@ contract HyperliquidReceivableOracle is IReceivableOracle {
             agents[id] = RegisteredAgent({
                 agent: agent,
                 assetType: assetType,
-                registered: true
+                registered: true,
+                confirmedAtBlock: 0,
+                confirmedAmount: 0
             });
             emit AgentRegistered(id, agent, assetType);
         }
     }
 
+    /**
+     * @notice Confirm the agent's current balance. Must be called at least
+     *         MIN_BALANCE_AGE blocks before requestAdvance for the balance
+     *         to be considered valid. Prevents flash-loan manipulation.
+     *
+     *         Anyone can call this (the balance is read from the precompile,
+     *         not from the caller).
+     */
+    function confirmBalance(bytes32 receivableId) external {
+        RegisteredAgent storage entry = agents[receivableId];
+        require(entry.registered, "not registered");
+
+        uint256 balance = _readPrecompile(entry.agent, entry.assetType);
+        require(balance > 0, "zero balance");
+
+        entry.confirmedAtBlock = block.number;
+        entry.confirmedAmount = balance;
+        emit BalanceConfirmed(receivableId, entry.agent, balance, block.number);
+    }
+
     // ─── IReceivableOracle ───
 
     function getReceivable(bytes32 receivableId) external view override returns (
-        bool   exists,
+        bool    exists,
         address beneficiary,
         uint256 amount,
-        bool   settled
+        bool    settled
     ) {
         RegisteredAgent storage entry = agents[receivableId];
         if (!entry.registered) {
             return (false, address(0), 0, false);
         }
 
-        uint256 balance = _readPrecompile(entry.agent, entry.assetType);
+        // Read current balance from precompile
+        uint256 currentBalance = _readPrecompile(entry.agent, entry.assetType);
 
-        // exists = true only when the agent actually holds a balance
-        exists      = balance > 0;
+        // Anti-flash: balance must have been confirmed at least MIN_BALANCE_AGE blocks ago
+        bool balanceAged = entry.confirmedAtBlock > 0
+            && block.number >= entry.confirmedAtBlock + MIN_BALANCE_AGE;
+
+        // Use the minimum of confirmed and current balance (prevents inflate-after-confirm)
+        uint256 safeAmount = currentBalance < entry.confirmedAmount
+            ? currentBalance
+            : entry.confirmedAmount;
+
+        exists      = balanceAged && safeAmount > 0;
         beneficiary = entry.agent;
-        amount      = balance;
-        settled     = false; // positions are ongoing, never "settled"
+        amount      = safeAmount;
+        settled     = false;
     }
 
-    // ─── Helper: encode receivableId ───
+    // ─── Helper ───
 
-    /**
-     * @notice Deterministically encode (agent, assetType) into a receivableId.
-     * @param agent     The trading agent address on HyperCore.
-     * @param assetType 0 = spot balance, 1 = vault equity.
-     * @return id       The keccak256 hash used as receivableId.
-     */
-    function encodeReceivableId(address agent, uint8 assetType) public pure returns (bytes32 id) {
-        id = keccak256(abi.encode(agent, assetType));
+    function encodeReceivableId(address agent, uint8 assetType) public pure returns (bytes32) {
+        return keccak256(abi.encode(agent, assetType));
     }
 
-    // ─── Internal: precompile reads ───
-
     /**
-     * @dev Calls the appropriate HyperEVM precompile to read the agent's
-     *      balance (spot) or equity (vault).
-     *
-     * NOTE: These staticcalls will revert on non-HyperEVM chains because
-     *       the precompile addresses do not exist elsewhere.
+     * @notice Check how many blocks until a confirmed balance becomes valid.
+     * @return 0 if already valid, otherwise blocks remaining.
      */
+    function blocksUntilValid(bytes32 receivableId) external view returns (uint256) {
+        RegisteredAgent storage entry = agents[receivableId];
+        if (!entry.registered || entry.confirmedAtBlock == 0) return type(uint256).max;
+        uint256 validAt = entry.confirmedAtBlock + MIN_BALANCE_AGE;
+        if (block.number >= validAt) return 0;
+        return validAt - block.number;
+    }
+
+    // ─── Internal ───
+
     function _readPrecompile(address agent, uint8 assetType) internal view returns (uint256) {
         address target = assetType == ASSET_TYPE_SPOT
             ? SPOT_PRECOMPILE
             : VAULT_PRECOMPILE;
 
-        (bool success, bytes memory data) = target.staticcall(
-            abi.encode(agent)
-        );
-
-        if (!success || data.length == 0) {
-            return 0;
-        }
-
+        (bool success, bytes memory data) = target.staticcall(abi.encode(agent));
+        if (!success || data.length == 0) return 0;
         return abi.decode(data, (uint256));
     }
 }
