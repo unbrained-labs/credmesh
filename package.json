@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.1.0",
+    "mppx": "^0.4.8",
     "viem": "^2.47.6"
   }
 }

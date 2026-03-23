@@ -34,7 +34,13 @@
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f''''Model: {d[\"\"model\"\"]}''''\\); print\\(f''''Protocol: {d[\"\"protocolFeePercent\"\"]}''''\\)\" echo \"\" echo \"=== Agent card ===\" curl -s \"$BASE/.well-known/agent.json\")",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f''''Name: {d.get\\(name,?\\)}''''\\); print\\(f''''URL: {d.get\\(url,?\\)}''''\\)\")",
       "Bash(python3 -c \":*)",
-      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\(''''dependencies'''',{}\\), indent=2\\)\\)\")"
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\(''''dependencies'''',{}\\), indent=2\\)\\)\")",
+      "WebFetch(domain:www.cloudflarestatus.com)",
+      "WebFetch(domain:mpp.dev)",
+      "WebFetch(domain:ap2-protocol.org)",
+      "WebFetch(domain:docs.tempo.xyz)",
+      "WebSearch",
+      "Bash(npm ls:*)"
     ]
   }
 }
