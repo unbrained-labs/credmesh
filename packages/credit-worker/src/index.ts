@@ -27,6 +27,12 @@ app.use("/spend/*", authMiddleware);
 app.use("/treasury/*", authMiddleware);
 // Demo/bootstrap endpoints are intentionally public (judges, dashboards, agents bootstrapping)
 
+// ─── Root ───
+
+app.get("/", (c) => {
+  return c.redirect("https://trustvault-dashboard.pages.dev");
+});
+
 // ─── Discovery ───
 
 app.get("/.well-known/agent.json", (c) => c.json(agentCard(c.env)));
