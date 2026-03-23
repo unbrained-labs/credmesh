@@ -538,7 +538,7 @@ app.post("/treasury/deposit", async (c) => {
     body.amount = parseFloat(verification.amount);
   }
 
-  return c.json(await getAgent(c.env).deposit(body));
+  return c.json(await agent.deposit(body));
 });
 
 app.get("/treasury", async (c) => {
@@ -799,14 +799,15 @@ app.get("/chain/:chainId/health", async (c) => {
       reputation: config.reputation ?? null,
       identity: config.identity ?? null,
     },
-    wallet: walletAddress,
     escrowBalance,
   });
 });
 
 app.get("/chain/:chainId/credit-check/:address", async (c) => {
   const chainId = c.req.param("chainId");
-  const address = c.req.param("address");
+  let address: string;
+  try { address = ethAddress(c.req.param("address"), "address"); }
+  catch { return c.json({ error: "Invalid Ethereum address." }, 400); }
   const config = getChainConfig(c.env, chainId);
   if (!config?.reputation) return c.json({ error: `No reputation oracle on ${chainId}.` }, 404);
 
