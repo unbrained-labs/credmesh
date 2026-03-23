@@ -132,7 +132,7 @@ export function landingHTML(): string {
     <p>Non-custodial credit infrastructure. Agents borrow against verified on-chain receivables. No operator approval — the contract verifies everything. Repayment via automatic waterfall.</p>
     <div class="hero-cta">
       <a href="https://credit.unbrained.club/bootstrap" class="btn btn-primary">Bootstrap an Agent</a>
-      <a href="https://credit.unbrained.club/vault/opportunity" class="btn btn-secondary">LP Yield Opportunity</a>
+      <a href="#deposit" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;">Deposit &amp; Earn Yield</a>
       <a href="https://trustvault-dashboard.pages.dev" class="btn btn-secondary">Open Dashboard</a>
     </div>
   </div>
@@ -206,11 +206,23 @@ export function landingHTML(): string {
 <span class="comment">// Agent receives USDC. Repayment is automatic via waterfall.</span></div>
   </section>
 
-  <!-- For LPs -->
-  <section>
-    <div class="section-label">For liquidity providers</div>
-    <h2>Earn yield from agent credit fees</h2>
-    <div class="stats">
+  <!-- Deposit CTA -->
+  <section id="deposit" style="background:#0a0a0a;margin:0 -24px;padding:60px 24px;border:2px solid #00e5ff;">
+    <div class="section-label" style="color:#00e5ff;">For liquidity providers</div>
+    <h2 style="font-size:32px;">Deposit USDC. Earn yield from agent credit fees.</h2>
+    <p style="font-size:13px;color:#999;max-width:600px;margin:16px 0 32px;">
+      Agents borrow. They pay fees. 85% of those fees flow to you as vault share price appreciation.
+      ERC-4626 standard — connect wallet, deposit, done.
+    </p>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
+      <a href="https://trustvault-dashboard.pages.dev" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;font-size:13px;padding:14px 32px;">
+        Connect Wallet &amp; Deposit
+      </a>
+      <a href="https://credit.unbrained.club/vault/opportunity" class="btn btn-secondary">
+        Check Live Yield
+      </a>
+    </div>
+    <div class="stats" style="margin-top:32px;">
       <div class="stat">
         <div class="label">Fee range</div>
         <div class="value green">2-25%</div>
