@@ -9,6 +9,22 @@ export interface Env {
   TEST_USDC?: string;
   CREDIT_ESCROW?: string;
   CREDIT_VAULT?: string;
+  // Base Sepolia chain
+  BASE_SEPOLIA_RPC_URL?: string;
+  BASE_SEPOLIA_PRIVATE_KEY?: string;
+  BASE_SEPOLIA_USDC?: string;
+  BASE_SEPOLIA_ESCROW?: string;
+  BASE_SEPOLIA_VAULT?: string;
+  BASE_SEPOLIA_REPUTATION?: string;
+  BASE_SEPOLIA_IDENTITY?: string;
+  // Base mainnet chain
+  BASE_RPC_URL?: string;
+  BASE_PRIVATE_KEY?: string;
+  BASE_USDC?: string;
+  BASE_ESCROW?: string;
+  BASE_VAULT?: string;
+  BASE_REPUTATION?: string;
+  BASE_IDENTITY?: string;
   // Payment rails
   TEMPO_ACCOUNT?: string;      // MPP — Tempo crypto payments (account address)
   STRIPE_SECRET_KEY?: string;  // MPP — Stripe fiat payments (secret key)

@@ -12,6 +12,7 @@ import { getX402Config } from "./x402";
 import { getPaymentMethods } from "./payments";
 import { mppGate, isMppEnabled } from "./mpp";
 import { landingHTML } from "./landing";
+import { getActiveChains, getChainConfig, getChainClients, explorerUrl } from "./chains";
 import type { AgentRegistrationInput, Env, PortfolioReport, RiskReport, SpendCategory, TimelineEvent, TreasuryState } from "./types";
 
 export { CreditAgent };
@@ -752,6 +753,81 @@ app.get("/bootstrap", (c) => {
       network: x402Config?.network ?? "Not configured (set X402_FACILITATOR_URL to enable)",
     },
   });
+});
+
+// ─── Multi-Chain ───
+
+app.get("/chains", (c) => {
+  const active = getActiveChains(c.env);
+  return c.json({
+    description: "Active chains where TrustVault Credit contracts are deployed. Add a chain by setting {PREFIX}_RPC_URL + {PREFIX}_USDC environment variables.",
+    chains: active,
+    count: active.length,
+  });
+});
+
+app.get("/chain/:chainId/health", async (c) => {
+  const chainId = c.req.param("chainId");
+  const config = getChainConfig(c.env, chainId);
+  if (!config) return c.json({ error: `Chain ${chainId} not configured.` }, 404);
+
+  const clients = getChainClients(config);
+  const walletAddress = clients.account.address;
+
+  let escrowBalance: string | null = null;
+  if (config.escrow) {
+    try {
+      const bal = await clients.publicClient.readContract({
+        address: config.token,
+        abi: [{ type: "function", name: "balanceOf", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }], stateMutability: "view" }],
+        functionName: "balanceOf",
+        args: [config.escrow],
+      });
+      escrowBalance = `${Number(bal) / 1e6} USDC`;
+    } catch { /* chain may not be reachable */ }
+  }
+
+  return c.json({
+    chain: config.meta.name,
+    chainId: config.meta.chainId,
+    network: config.meta.id,
+    explorer: config.meta.explorer,
+    contracts: {
+      token: config.token,
+      escrow: config.escrow ?? null,
+      vault: config.vault ?? null,
+      reputation: config.reputation ?? null,
+      identity: config.identity ?? null,
+    },
+    wallet: walletAddress,
+    escrowBalance,
+  });
+});
+
+app.get("/chain/:chainId/credit-check/:address", async (c) => {
+  const chainId = c.req.param("chainId");
+  const address = c.req.param("address");
+  const config = getChainConfig(c.env, chainId);
+  if (!config?.reputation) return c.json({ error: `No reputation oracle on ${chainId}.` }, 404);
+
+  const clients = getChainClients(config);
+  try {
+    const [score, attestations] = await clients.publicClient.readContract({
+      address: config.reputation,
+      abi: [{ type: "function", name: "getReputation", inputs: [{ name: "agent", type: "address" }], outputs: [{ name: "score", type: "uint256" }, { name: "attestationCount", type: "uint256" }], stateMutability: "view" }],
+      functionName: "getReputation",
+      args: [address as `0x${string}`],
+    }) as [bigint, bigint];
+    return c.json({
+      chain: config.meta.id,
+      address,
+      score: Number(score),
+      attestationCount: Number(attestations),
+      explorer: explorerUrl(chainId, "address", address),
+    });
+  } catch (e) {
+    return c.json({ error: "Failed to read reputation.", chain: chainId }, 500);
+  }
 });
 
 // ─── Payment Methods ───
