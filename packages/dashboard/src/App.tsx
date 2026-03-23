@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, type PortfolioReport, type RiskReport, type TreasuryState, type TimelineEvent, type HealthResponse, type FeeInfo } from './api';
+import { api, type PortfolioReport, type RiskReport, type TreasuryState, type TimelineEvent, type HealthResponse, type FeeInfo, type ChainsResponse } from './api';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { StatsRow } from './components/StatsRow';
@@ -13,6 +13,7 @@ import { AlertsPanel } from './components/AlertsPanel';
 import { Terminal } from './components/Terminal';
 import { VaultPanel } from './components/VaultPanel';
 import { FeePanel } from './components/FeePanel';
+import { ChainStatus } from './components/ChainStatus';
 import { Landing } from './components/Landing';
 
 export default function App() {
@@ -21,16 +22,17 @@ export default function App() {
   const [treasury, setTreasury] = useState<TreasuryState | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [fees, setFees] = useState<FeeInfo | null>(null);
+  const [chains, setChains] = useState<ChainsResponse | null>(null);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [p, r, t, h, f, tl] = await Promise.all([
-        api.portfolio(), api.risk(), api.treasury(), api.health(), api.fees(), api.timeline(30),
+      const [p, r, t, h, f, tl, ch] = await Promise.all([
+        api.portfolio(), api.risk(), api.treasury(), api.health(), api.fees(), api.timeline(30), api.chains(),
       ]);
-      setPortfolio(p); setRisk(r); setTreasury(t); setHealth(h); setFees(f); setTimeline(tl);
+      setPortfolio(p); setRisk(r); setTreasury(t); setHealth(h); setFees(f); setTimeline(tl); setChains(ch);
     } catch (e) {
       console.error('Fetch failed:', e);
     } finally {
@@ -84,6 +86,9 @@ export default function App() {
           <FeePanel fees={fees} />
           {risk && <AlertsPanel alerts={risk.alerts} recommendations={risk.recommendations} />}
           {portfolio && <ExposureChart exposure={portfolio.exposureByCategory} />}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <ChainStatus data={chains} />
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {portfolio && <TopBorrowers borrowers={portfolio.topBorrowers} />}

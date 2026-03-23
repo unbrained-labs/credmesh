@@ -119,6 +119,20 @@ export interface PaymentMethods {
   lpIntegration: { dashboard: string; api: string; vault: string };
 }
 
+export interface ChainInfo {
+  id: string;
+  name: string;
+  chainId: number;
+  hasEscrow: boolean;
+  hasVault: boolean;
+}
+
+export interface ChainsResponse {
+  description: string;
+  chains: ChainInfo[];
+  count: number;
+}
+
 export const api = {
   portfolio: () => get<PortfolioReport>('/dashboard/portfolio'),
   risk: () => get<RiskReport>('/dashboard/risk'),
@@ -145,4 +159,5 @@ export const api = {
   depositFunds: (body: { lenderAddress: string; amount: number; memo: string }) =>
     postRaw('/treasury/deposit', body),
   openJobs: () => get<Array<{ id: string; title: string; expectedPayout: number; category: string }>>('/marketplace/open'),
+  chains: () => get<ChainsResponse>('/chains'),
 };
