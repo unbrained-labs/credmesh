@@ -16,7 +16,12 @@ contract ReputationCreditOracle is ICreditOracle {
     IReputationRegistry public immutable reputationRegistry;
     address public immutable escrow;
     uint256 public exposureMultiplier; // in token units per score point
-    address public deployer;
+    address public governance;
+
+    modifier onlyGovernance() {
+        require(msg.sender == governance, "not governance");
+        _;
+    }
 
     constructor(
         address _reputationRegistry,
@@ -26,12 +31,16 @@ contract ReputationCreditOracle is ICreditOracle {
         reputationRegistry = IReputationRegistry(_reputationRegistry);
         escrow = _escrow;
         exposureMultiplier = _exposureMultiplier;
-        deployer = msg.sender;
+        governance = msg.sender;
     }
 
-    function setExposureMultiplier(uint256 _multiplier) external {
-        require(msg.sender == deployer, "not deployer");
+    function setExposureMultiplier(uint256 _multiplier) external onlyGovernance {
         exposureMultiplier = _multiplier;
+    }
+
+    function transferGovernance(address newGovernance) external onlyGovernance {
+        require(newGovernance != address(0), "zero address");
+        governance = newGovernance;
     }
 
     function getCredit(address agent) external view override returns (
@@ -43,7 +52,6 @@ contract ReputationCreditOracle is ICreditOracle {
         score = repScore > 100 ? 100 : repScore;
         totalExposure = ITrustlessEscrow(escrow).exposure(agent);
         maxExposure = score * exposureMultiplier;
-        return (score, totalExposure, maxExposure);
     }
 }
 

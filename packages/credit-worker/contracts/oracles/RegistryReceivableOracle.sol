@@ -49,8 +49,7 @@ contract RegistryReceivableOracle is IReceivableOracle {
         require(amount > 0, "zero amount");
         require(beneficiary != address(0), "zero beneficiary");
 
-        token.transferFrom(msg.sender, address(this), amount);
-
+        // State update before external call (checks-effects-interactions)
         receivables[id] = Receivable({
             beneficiary: beneficiary,
             funder: msg.sender,
@@ -58,6 +57,8 @@ contract RegistryReceivableOracle is IReceivableOracle {
             exists: true,
             settled: false
         });
+
+        require(token.transferFrom(msg.sender, address(this), amount), "transfer failed");
 
         emit ReceivableRegistered(id, beneficiary, msg.sender, amount);
     }
@@ -73,7 +74,7 @@ contract RegistryReceivableOracle is IReceivableOracle {
         require(msg.sender == r.funder, "only funder can settle");
 
         r.settled = true;
-        token.transfer(r.beneficiary, r.amount);
+        require(token.transfer(r.beneficiary, r.amount), "transfer failed");
 
         emit ReceivableSettled(id, r.beneficiary, r.amount);
     }

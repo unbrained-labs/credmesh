@@ -31,7 +31,7 @@ contract TrustlessEscrow is ReentrancyGuard {
     // ─── Immutables ───
 
     IERC20 public immutable token;
-    address public immutable deployer;
+    address public governance; // transferable — can move to multisig, DAO, token governance
 
     // ─── Parameters (deployer can adjust, but cannot use to block advances) ───
 
@@ -61,8 +61,8 @@ contract TrustlessEscrow is ReentrancyGuard {
     mapping(address => uint256) public exposure;   // agent => outstanding principal
     mapping(bytes32 => bool) public usedReceivables; // receivableId => used (prevents double-advance)
 
-    uint256 public totalDeposited;
-    uint256 public totalAdvanced;
+    uint256 public totalDeposited;   // cumulative (never decremented)
+    uint256 public totalAdvanced;    // cumulative (never decremented)
     uint256 public totalRepaid;
     uint256 public totalFeesEarned;
 
@@ -77,8 +77,8 @@ contract TrustlessEscrow is ReentrancyGuard {
 
     // ─── Modifiers ───
 
-    modifier onlyDeployer() {
-        require(msg.sender == deployer, "not deployer");
+    modifier onlyGovernance() {
+        require(msg.sender == governance, "not governance");
         _;
     }
 
@@ -92,7 +92,7 @@ contract TrustlessEscrow is ReentrancyGuard {
         uint256 _feeBps
     ) {
         token = IERC20(_token);
-        deployer = msg.sender;
+        governance = msg.sender;
         creditOracle = ICreditOracle(_creditOracle);
         maxAdvanceRatioBps = _maxAdvanceRatioBps;
         minCreditScore = _minCreditScore;
@@ -101,16 +101,27 @@ contract TrustlessEscrow is ReentrancyGuard {
 
     // ─── Deployer: Parameter Management (cannot block individual advances) ───
 
-    function registerOracle(address oracle) external onlyDeployer {
+    function registerOracle(address oracle) external onlyGovernance {
         require(!trustedOracles[oracle], "already registered");
         trustedOracles[oracle] = true;
         oracleList.push(oracle);
         emit OracleRegistered(oracle);
     }
 
-    function removeOracle(address oracle) external onlyDeployer {
+    function removeOracle(address oracle) external onlyGovernance {
         require(trustedOracles[oracle], "not registered");
         trustedOracles[oracle] = false;
+
+        // Remove from oracleList so oracleCount() stays accurate
+        uint256 len = oracleList.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (oracleList[i] == oracle) {
+                oracleList[i] = oracleList[len - 1];
+                oracleList.pop();
+                break;
+            }
+        }
+
         emit OracleRemoved(oracle);
     }
 
@@ -118,7 +129,7 @@ contract TrustlessEscrow is ReentrancyGuard {
         uint256 _maxAdvanceRatioBps,
         uint256 _minCreditScore,
         uint256 _feeBps
-    ) external onlyDeployer {
+    ) external onlyGovernance {
         require(_maxAdvanceRatioBps <= 5000, "ratio too high"); // max 50%
         require(_feeBps <= 2500, "fee too high"); // max 25%
         maxAdvanceRatioBps = _maxAdvanceRatioBps;
@@ -127,8 +138,17 @@ contract TrustlessEscrow is ReentrancyGuard {
         emit ParametersUpdated(_maxAdvanceRatioBps, _minCreditScore, _feeBps);
     }
 
-    function setCreditOracle(address _creditOracle) external onlyDeployer {
+    function setCreditOracle(address _creditOracle) external onlyGovernance {
         creditOracle = ICreditOracle(_creditOracle);
+    }
+
+    /**
+     * @notice Transfer governance to a new address (multisig, DAO, token contract).
+     *         This is a one-way transfer — the new address becomes the sole governor.
+     */
+    function transferGovernance(address newGovernance) external onlyGovernance {
+        require(newGovernance != address(0), "zero address");
+        governance = newGovernance;
     }
 
     // ─── Anyone: Deposit Capital ───
