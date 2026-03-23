@@ -26,7 +26,8 @@ contract TrustlessEscrow is ReentrancyGuard {
 
     // ─── Constants ───
 
-    uint256 public constant TIMELOCK_DELAY = 48 hours;
+    // TESTNET: 5 minutes for fast iteration. Production deploys use 48 hours.
+    uint256 public constant TIMELOCK_DELAY = 5 minutes;
     uint256 public constant MIN_CREDIT_SCORE_FLOOR = 10;
     uint256 public constant MAX_ADVANCE_RATIO_CAP = 5000; // 50%
     uint256 public constant MAX_FEE_CAP = 2500; // 25%
