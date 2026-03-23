@@ -251,7 +251,7 @@ app.get("/vault/opportunity", async (c) => {
   return respond(c, data, {
     title: "Vault Yield Opportunity",
     description: "Live yield data for TrustVault Credit liquidity providers. Deposit USDC, earn fees from agent credit advances.",
-    cta: { label: "Connect Wallet & Deposit", href: "https://trustvault-dashboard.pages.dev" },
+    cta: { label: "Connect Wallet & Deposit", href: "https://trustvault-dashboard.pages.dev#deposit" },
   });
 });
 

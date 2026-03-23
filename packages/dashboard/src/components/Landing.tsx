@@ -28,7 +28,10 @@ const BASE = import.meta.env.PROD ? 'https://credit.unbrained.club' : '/api';
 export function Landing({ vault }: { vault: HealthResponse['vault'] | null }) {
   const [data, setData] = useState<UseCasesData | null>(null);
   const [payments, setPayments] = useState<PaymentMethods | null>(null);
-  const [tab, setTab] = useState<'agents' | 'lps'>('agents');
+  // Auto-open LP tab if URL has #deposit hash
+  const [tab, setTab] = useState<'agents' | 'lps'>(
+    typeof window !== 'undefined' && window.location.hash === '#deposit' ? 'lps' : 'agents'
+  );
 
   useEffect(() => {
     fetch(`${BASE}/use-cases`).then(r => r.json()).then(setData).catch(() => {});

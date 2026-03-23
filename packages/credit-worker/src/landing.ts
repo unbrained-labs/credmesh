@@ -132,7 +132,7 @@ export function landingHTML(): string {
     <p>Non-custodial credit infrastructure. Agents borrow against verified on-chain receivables. No operator approval — the contract verifies everything. Repayment via automatic waterfall.</p>
     <div class="hero-cta">
       <a href="https://github.com/unbrained-labs/trustvault-credit/blob/main/SKILL.md" class="btn btn-primary">Agent? Start Here</a>
-      <a href="#deposit" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;">Deposit &amp; Earn Yield</a>
+      <a href="https://trustvault-dashboard.pages.dev#deposit" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;">Deposit &amp; Earn Yield</a>
       <a href="https://trustvault-dashboard.pages.dev" class="btn btn-secondary">Open Dashboard</a>
     </div>
   </div>
@@ -215,7 +215,7 @@ export function landingHTML(): string {
       ERC-4626 standard — connect wallet, deposit, done.
     </p>
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
-      <a href="https://trustvault-dashboard.pages.dev" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;font-size:13px;padding:14px 32px;">
+      <a href="https://trustvault-dashboard.pages.dev#deposit" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;font-size:13px;padding:14px 32px;">
         Connect Wallet &amp; Deposit
       </a>
       <a href="https://credit.unbrained.club/vault/opportunity" class="btn btn-secondary">
