@@ -11,6 +11,7 @@ import { positiveNumber, boundedString, ethAddress } from "./validate";
 import { getX402Config } from "./x402";
 import { getPaymentMethods } from "./payments";
 import { mppGate, isMppEnabled } from "./mpp";
+import { landingHTML } from "./landing";
 import type { AgentRegistrationInput, Env, PortfolioReport, RiskReport, SpendCategory, TimelineEvent, TreasuryState } from "./types";
 
 export { CreditAgent };
@@ -27,10 +28,18 @@ app.use("/spend/*", authMiddleware);
 app.use("/treasury/*", authMiddleware);
 // Demo/bootstrap endpoints are intentionally public (judges, dashboards, agents bootstrapping)
 
-// ─── Root ───
+// ─── Root (Landing Page) ───
 
 app.get("/", (c) => {
-  return c.redirect("https://trustvault-dashboard.pages.dev");
+  const accept = c.req.header("accept") ?? "";
+  // Agents requesting JSON get the agent card
+  if (accept.includes("application/json") && !accept.includes("text/html")) {
+    return c.json(agentCard(c.env));
+  }
+  // Browsers get the landing page
+  c.header("Content-Type", "text/html; charset=utf-8");
+  c.header("Cache-Control", "public, max-age=3600");
+  return c.body(landingHTML());
 });
 
 // ─── Discovery ───
