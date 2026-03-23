@@ -164,7 +164,7 @@ function escapeRegex(s: string): string {
 // ─── ReputationRegistry (minimal implementation) ───
 
 const REPUTATION_REGISTRY_SOURCE = `// SPDX-License-Identifier: MIT
-pragma solidity 0.8.20;
+pragma solidity ^0.8.20;
 
 /**
  * @title ReputationRegistry
@@ -273,17 +273,27 @@ async function main() {
   // 1. ReputationRegistry
   // ──────────────────────────────────────────────────────
   console.log("\n── Step 1: ReputationRegistry ──");
-  const repSources = { "ReputationRegistry.sol": REPUTATION_REGISTRY_SOURCE };
-  const repCompiled = compile(repSources, "ReputationRegistry.sol", "ReputationRegistry");
 
-  const reputationRegistryAddr = await deployContract(
-    publicClient,
-    walletClient,
-    "ReputationRegistry",
-    repCompiled.abi,
-    repCompiled.bytecode,
+  // Accept pre-deployed address as second CLI arg
+  const preDeployedRepRegistry = process.argv[3] as string | undefined;
+  let reputationRegistryAddr: string;
+
+  if (preDeployedRepRegistry) {
+    reputationRegistryAddr = preDeployedRepRegistry;
+    console.log(`  Using pre-deployed: ${reputationRegistryAddr}`);
+  } else {
+    const repSources = { "ReputationRegistry.sol": REPUTATION_REGISTRY_SOURCE };
+    const repCompiled = compile(repSources, "ReputationRegistry.sol", "ReputationRegistry");
+
+    reputationRegistryAddr = await deployContract(
+      publicClient,
+      walletClient,
+      "ReputationRegistry",
+      repCompiled.abi,
+      repCompiled.bytecode,
     [],
   );
+  }
 
   // ──────────────────────────────────────────────────────
   // 2. ReputationCreditOracle
