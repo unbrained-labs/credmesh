@@ -90,21 +90,20 @@ export interface ChainClients {
 
 // ─── Env Helpers ───
 
-function envGet(env: Record<string, unknown>, prefix: string, key: string): string | undefined {
-  if (prefix) {
-    return (env[`${prefix}_${key}`] as string) ?? undefined;
-  }
-  // Legacy (Sepolia) — uses unprefixed names
-  const legacyMap: Record<string, string> = {
-    RPC_URL: "CHAIN_RPC_URL",
-    PRIVATE_KEY: "AGENT_PRIVATE_KEY",
-    USDC: "TEST_USDC",
-    ESCROW: "CREDIT_ESCROW",
-    VAULT: "CREDIT_VAULT",
-    REPUTATION: "REPUTATION_REGISTRY",
-    IDENTITY: "IDENTITY_REGISTRY",
-  };
-  return (env[legacyMap[key] ?? key] as string) ?? undefined;
+const LEGACY_ENV_MAP: Record<string, string> = {
+  RPC_URL: "CHAIN_RPC_URL",
+  PRIVATE_KEY: "AGENT_PRIVATE_KEY",
+  USDC: "TEST_USDC",
+  ESCROW: "CREDIT_ESCROW",
+  VAULT: "CREDIT_VAULT",
+  REPUTATION: "REPUTATION_REGISTRY",
+  IDENTITY: "IDENTITY_REGISTRY",
+};
+
+function envGet(env: Env, prefix: string, key: string): string | undefined {
+  const envRecord = env as unknown as Record<string, unknown>;
+  const envKey = prefix ? `${prefix}_${key}` : (LEGACY_ENV_MAP[key] ?? key);
+  return envRecord[envKey] as string | undefined;
 }
 
 // ─── Public API ───
@@ -117,10 +116,10 @@ export function getChainConfig(env: Env, chainId: string): ChainConfig | null {
   const meta = KNOWN_CHAINS.find((c) => c.id === chainId);
   if (!meta) return null;
 
-  const rpcUrl = envGet(env as unknown as Record<string, unknown>, meta.envPrefix, "RPC_URL");
-  const privateKey = envGet(env as unknown as Record<string, unknown>, meta.envPrefix, "PRIVATE_KEY")
+  const rpcUrl = envGet(env, meta.envPrefix, "RPC_URL");
+  const privateKey = envGet(env, meta.envPrefix, "PRIVATE_KEY")
     ?? (env.AGENT_PRIVATE_KEY as string); // fallback to global key
-  const token = envGet(env as unknown as Record<string, unknown>, meta.envPrefix, "USDC");
+  const token = envGet(env, meta.envPrefix, "USDC");
 
   if (!rpcUrl || !privateKey || !token) return null;
 
@@ -129,10 +128,10 @@ export function getChainConfig(env: Env, chainId: string): ChainConfig | null {
     rpcUrl,
     privateKey: privateKey as Hex,
     token: token as Address,
-    escrow: envGet(env as unknown as Record<string, unknown>, meta.envPrefix, "ESCROW") as Address | undefined,
-    vault: envGet(env as unknown as Record<string, unknown>, meta.envPrefix, "VAULT") as Address | undefined,
-    reputation: envGet(env as unknown as Record<string, unknown>, meta.envPrefix, "REPUTATION") as Address | undefined,
-    identity: envGet(env as unknown as Record<string, unknown>, meta.envPrefix, "IDENTITY") as Address | undefined,
+    escrow: envGet(env, meta.envPrefix, "ESCROW") as Address | undefined,
+    vault: envGet(env, meta.envPrefix, "VAULT") as Address | undefined,
+    reputation: envGet(env, meta.envPrefix, "REPUTATION") as Address | undefined,
+    identity: envGet(env, meta.envPrefix, "IDENTITY") as Address | undefined,
   };
 }
 

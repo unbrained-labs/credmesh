@@ -24,7 +24,6 @@ export function landingHTML(): string {
     a:hover { text-decoration: underline; }
 
     .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
-    .border-b { border-bottom: 1px solid #1a1a1a; }
 
     /* Header */
     header { position: sticky; top: 0; z-index: 50; background: #050505; border-bottom: 1px solid #333; }
