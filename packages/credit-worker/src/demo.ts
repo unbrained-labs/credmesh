@@ -227,21 +227,24 @@ export function generateHappyPath() {
 }
 
 export function generateFailurePath() {
+  // These agents LOOK credible (score ~67-72, identity registered) — they get
+  // APPROVED. But risky-runner's job pays far less than expected (waterfall
+  // shortfall → partial default) and new-agent-99 fails entirely (manual default).
   return {
     agents: [
       {
         address: "0xdd44444444444444444444444444444444444444",
         name: "risky-runner",
         url: "https://risky-runner.agent.example",
-        trustScore: 45, attestationCount: 3, cooperationSuccessCount: 1,
-        successfulJobs: 2, failedJobs: 2, averageCompletedPayout: 40,
+        trustScore: 72, attestationCount: 8, cooperationSuccessCount: 4,
+        successfulJobs: 8, failedJobs: 1, averageCompletedPayout: 55,
       },
       {
         address: "0xee55555555555555555555555555555555555555",
         name: "new-agent-99",
         url: "https://new-agent-99.agent.example",
-        trustScore: 30, attestationCount: 0, cooperationSuccessCount: 0,
-        successfulJobs: 0, failedJobs: 0, averageCompletedPayout: 0,
+        trustScore: 60, attestationCount: 5, cooperationSuccessCount: 3,
+        successfulJobs: 8, failedJobs: 0, averageCompletedPayout: 45,
       },
     ],
     jobs: [
@@ -249,10 +252,13 @@ export function generateFailurePath() {
       { agentAddress: "0xee55555555555555555555555555555555555555", payer: "0xc11e000000000000000000000000000000000005", title: "Social media growth campaign", expectedPayout: 40, durationHours: 24, category: "growth" },
     ],
     advances: [
-      { agentAddress: "0xdd44444444444444444444444444444444444444", jobIndex: 0, requestedAmount: 10, purpose: "gas" },
-      { agentAddress: "0xee55555555555555555555555555555555555555", jobIndex: 1, requestedAmount: 8, purpose: "compute" },
+      // Request close to receivable cap so waterfall shortfall produces a real default
+      { agentAddress: "0xdd44444444444444444444444444444444444444", jobIndex: 0, requestedAmount: 18, purpose: "gas" },
+      { agentAddress: "0xee55555555555555555555555555555555555555", jobIndex: 1, requestedAmount: 12, purpose: "compute" },
     ],
-    partialCompletions: [{ jobIndex: 0, actualPayout: 30 }],
+    // risky-runner's job pays $10 vs expected $60 — advance was $18 + fee, so waterfall shortfall
+    partialCompletions: [{ jobIndex: 0, actualPayout: 10 }],
+    // new-agent-99 fails entirely — manual default
     defaults: [{ advanceIndex: 1, reason: "Agent failed to deliver any output." }],
   };
 }
@@ -260,7 +266,7 @@ export function generateFailurePath() {
 export function listScenarios(): DemoScenario[] {
   return [
     { name: "happy", description: "Three agents with solid history complete jobs and repay advances in full. Credit profiles improve.", agents: 3, jobs: 3, advances: 3, includesDefault: false },
-    { name: "failure", description: "Two weak agents take advances. One delivers short, causing partial default. The other fails entirely.", agents: 2, jobs: 2, advances: 2, includesDefault: true },
+    { name: "failure", description: "Two credible-looking agents get approved but fail. One delivers far short (waterfall shortfall → partial default). The other fails entirely (manual default).", agents: 2, jobs: 2, advances: 2, includesDefault: true },
     { name: "both", description: "Runs both scenarios. Shows the contrast between strong and weak borrowers in the same portfolio.", agents: 5, jobs: 5, advances: 5, includesDefault: true },
   ];
 }

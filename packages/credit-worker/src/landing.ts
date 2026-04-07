@@ -10,7 +10,7 @@ export function landingHTML(): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TrustVault Credit — Programmable Working Capital for Autonomous Agents</title>
+  <title>CredMesh — Programmable Working Capital for Autonomous Agents</title>
   <meta name="description" content="Non-custodial credit infrastructure for AI agents. Advance working capital against verified on-chain receivables. No operator approval needed.">
   <link rel="agent" href="https://credit.unbrained.club/.well-known/agent.json">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23050505'/><rect x='4' y='4' width='8' height='8' fill='%2300ff41'/></svg>">
@@ -116,8 +116,8 @@ export function landingHTML(): string {
       <div class="nav">
         <a href="https://credit.unbrained.club/.well-known/agent.json">[agent.json]</a>
         <a href="https://credit.unbrained.club/fees">[fees]</a>
-        <a href="https://github.com/unbrained-labs/trustvault-credit">[github]</a>
-        <a href="https://trustvault-dashboard.pages.dev">[dashboard]</a>
+        <a href="https://github.com/unbrained-labs/credmesh">[github]</a>
+        <a href="https://credmesh-dashboard.pages.dev">[dashboard]</a>
         <div class="badge"><div class="dot"></div><span>LIVE</span></div>
       </div>
     </div>
@@ -131,9 +131,9 @@ export function landingHTML(): string {
     <h1>Programmable <em>working capital</em> for autonomous agents</h1>
     <p>Non-custodial credit infrastructure. Agents borrow against verified on-chain receivables. No operator approval — the contract verifies everything. Repayment via automatic waterfall.</p>
     <div class="hero-cta">
-      <a href="https://github.com/unbrained-labs/trustvault-credit/blob/main/SKILL.md" class="btn btn-primary">Agent? Start Here</a>
-      <a href="https://trustvault-dashboard.pages.dev#deposit" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;">Deposit &amp; Earn Yield</a>
-      <a href="https://trustvault-dashboard.pages.dev" class="btn btn-secondary">Open Dashboard</a>
+      <a href="https://github.com/unbrained-labs/credmesh/blob/main/SKILL.md" class="btn btn-primary">Agent? Start Here</a>
+      <a href="https://credmesh-dashboard.pages.dev#deposit" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;">Deposit &amp; Earn Yield</a>
+      <a href="https://credmesh-dashboard.pages.dev" class="btn btn-secondary">Open Dashboard</a>
     </div>
   </div>
 
@@ -215,7 +215,7 @@ export function landingHTML(): string {
       ERC-4626 standard — connect wallet, deposit, done.
     </p>
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
-      <a href="https://trustvault-dashboard.pages.dev#deposit" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;font-size:13px;padding:14px 32px;">
+      <a href="https://credmesh-dashboard.pages.dev#deposit" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;font-size:13px;padding:14px 32px;">
         Connect Wallet &amp; Deposit
       </a>
       <a href="https://credit.unbrained.club/vault/opportunity" class="btn btn-secondary">
@@ -236,7 +236,7 @@ export function landingHTML(): string {
       <div class="stat">
         <div class="label">Vault standard</div>
         <div class="value">ERC-4626</div>
-        <div class="sub">Deposit USDC, get tvCREDIT</div>
+        <div class="sub">Deposit USDC, get cmCREDIT</div>
       </div>
       <div class="stat">
         <div class="label">Settlement</div>
@@ -338,7 +338,7 @@ GET /vault/opportunity         <span class="comment"># Yield, risk, deposit inst
 GET /vault/position/:address   <span class="comment"># Your shares, value, accrued yield</span>
 GET /fees                      <span class="comment"># Current fee model + example rates</span></div>
     <p style="font-size:11px;color:#666;margin-top:16px;">
-      Full API reference: <a href="https://github.com/unbrained-labs/trustvault-credit/blob/main/SKILL.md">SKILL.md</a>
+      Full API reference: <a href="https://github.com/unbrained-labs/credmesh/blob/main/SKILL.md">SKILL.md</a>
     </p>
   </section>
 
@@ -349,9 +349,9 @@ GET /fees                      <span class="comment"># Current fee model + examp
     <div class="inner">
       <div class="links">
         <a href="https://credit.unbrained.club/.well-known/agent.json">Agent Card</a>
-        <a href="https://trustvault-dashboard.pages.dev">Dashboard</a>
-        <a href="https://github.com/unbrained-labs/trustvault-credit">GitHub</a>
-        <a href="https://github.com/unbrained-labs/trustvault-credit/blob/main/SKILL.md">SKILL.md</a>
+        <a href="https://credmesh-dashboard.pages.dev">Dashboard</a>
+        <a href="https://github.com/unbrained-labs/credmesh">GitHub</a>
+        <a href="https://github.com/unbrained-labs/credmesh/blob/main/SKILL.md">SKILL.md</a>
         <a href="https://credit.unbrained.club/fees">Fee Model</a>
       </div>
       <div class="copy">unbrained.club — 2026</div>

@@ -66,7 +66,7 @@ export function paymentInstructions(config: X402Config, amount: number, descript
     description,
     mimeType: "application/json",
     extra: {
-      name: "TrustVault Credit",
+      name: "CredMesh",
       description,
     },
   };

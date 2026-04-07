@@ -68,7 +68,7 @@ async function main() {
   console.log(`Balance: ${Number(bal as bigint) / 1e6} tUSDC`);
 
   console.log(`\n=== DONE ===\nToken: ${addr}`);
-  console.log(`\nSet secret:\n  echo "${addr}" | npx wrangler secret put TEST_USDC --name trustvault-credit`);
+  console.log(`\nSet secret:\n  echo "${addr}" | npx wrangler secret put TEST_USDC --name credmesh`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

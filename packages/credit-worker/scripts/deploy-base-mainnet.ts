@@ -1,5 +1,5 @@
 /**
- * Deploy full CredMesh stack to Base Sepolia testnet.
+ * Deploy full CredMesh stack to Base MAINNET.
  *
  * Deploys (in order):
  *   1. ReputationRegistry
@@ -22,22 +22,23 @@ import {
   parseAbi,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { baseSepolia } from "viem/chains";
+import { base } from "viem/chains";
 import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import solc from "solc";
 
 // ─── Config ───
 
-const BASE_SEPOLIA_RPC = "https://sepolia.base.org";
-const BASE_SEPOLIA_USDC: Address = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+const BASE_RPC = "https://mainnet.base.org";
+const BASE_USDC: Address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
-// TrustlessEscrow constructor params
-const MAX_ADVANCE_RATIO_BPS = 8000; // 80% default (governance can raise to 100%)
+// TrustlessEscrow constructor params — PRODUCTION VALUES
+// Per-oracle advance ratios (set at oracle registration, not global)
+const FUND_LOCKED_ORACLE_RATIO_BPS = 10000; // 100% for fund-locked oracles
 const MIN_CREDIT_SCORE = 20;
 const FEE_BPS = 500; // 5%
 const HARD_CAP_PER_ADVANCE = BigInt(10_000) * BigInt(1e6); // 10,000 USDC (6 decimals)
-const TIMELOCK_DELAY = 3600; // 1 hour for testnet (mainnet: 172800 = 48h)
+const TIMELOCK_DELAY = 172800; // 48 hours — PRODUCTION
 const MAX_EXPOSURE_PER_AGENT = BigInt(100_000) * BigInt(1e6); // 100,000 USDC
 
 // ReputationCreditOracle: 500 USDC exposure per score point
@@ -254,7 +255,7 @@ async function deployContract(
     bytecode,
     args,
   });
-  console.log(`  Tx: https://sepolia.basescan.org/tx/${hash}`);
+  console.log(`  Tx: https://basescan.org/tx/${hash}`);
 
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   const addr = receipt.contractAddress!;
@@ -266,21 +267,21 @@ async function deployContract(
 
 async function main() {
   const account = privateKeyToAccount(PRIVATE_KEY);
-  const transport = http(BASE_SEPOLIA_RPC);
-  const publicClient = createPublicClient({ chain: baseSepolia, transport });
-  const walletClient = createWalletClient({ chain: baseSepolia, transport, account });
+  const transport = http(BASE_RPC);
+  const publicClient = createPublicClient({ chain: base, transport });
+  const walletClient = createWalletClient({ chain: base, transport, account });
 
-  console.log("=== CredMesh — Base Sepolia Deployment ===\n");
-  console.log(`Chain:    Base Sepolia (${baseSepolia.id})`);
-  console.log(`RPC:      ${BASE_SEPOLIA_RPC}`);
-  console.log(`USDC:     ${BASE_SEPOLIA_USDC}`);
+  console.log("=== CredMesh — Base Mainnet Deployment ===\n");
+  console.log(`Chain:    Base Mainnet (${base.id})`);
+  console.log(`RPC:      ${BASE_RPC}`);
+  console.log(`USDC:     ${BASE_USDC}`);
   console.log(`Deployer: ${account.address}`);
 
   const balance = await publicClient.getBalance({ address: account.address });
   console.log(`Balance:  ${Number(balance) / 1e18} ETH`);
 
   if (balance === 0n) {
-    console.error("\nNo ETH balance! Fund your deployer on Base Sepolia first.");
+    console.error("\nNo ETH balance! Fund your deployer on Base Mainnet first.");
     console.error("Faucet: https://www.coinbase.com/faucets/base-ethereum-goerli-faucet");
     process.exit(1);
   }
@@ -392,9 +393,8 @@ async function main() {
     escrowCompiled.abi,
     escrowCompiled.bytecode,
     [
-      BASE_SEPOLIA_USDC,
+      BASE_USDC,
       creditOracleAddr,
-      BigInt(MAX_ADVANCE_RATIO_BPS),
       BigInt(MIN_CREDIT_SCORE),
       BigInt(FEE_BPS),
       HARD_CAP_PER_ADVANCE,
@@ -435,7 +435,7 @@ async function main() {
     "RegistryReceivableOracle",
     receivableCompiled.abi,
     receivableCompiled.bytecode,
-    [BASE_SEPOLIA_USDC],
+    [BASE_USDC],
   );
 
   // ──────────────────────────────────────────────────────
@@ -445,16 +445,16 @@ async function main() {
   console.log("\n── Step 5: Propose RegistryReceivableOracle as trusted oracle ──");
 
   const ESCROW_GOV_ABI = parseAbi([
-    "function proposeOracleAdd(address oracle) external",
+    "function proposeOracleAdd(address oracle, uint256 ratioBps) external",
   ]);
 
   const proposeHash = await walletClient.writeContract({
     address: escrowAddr,
     abi: ESCROW_GOV_ABI,
     functionName: "proposeOracleAdd",
-    args: [receivableOracleAddr],
+    args: [receivableOracleAddr, BigInt(FUND_LOCKED_ORACLE_RATIO_BPS)],
   });
-  console.log(`  Tx: https://sepolia.basescan.org/tx/${proposeHash}`);
+  console.log(`  Tx: https://basescan.org/tx/${proposeHash}`);
   const proposeReceipt = await publicClient.waitForTransactionReceipt({ hash: proposeHash });
   console.log(`  Oracle add proposed (48h timelock started). Block: ${proposeReceipt.blockNumber}`);
 
@@ -462,11 +462,11 @@ async function main() {
   // Summary
   // ──────────────────────────────────────────────────────
   console.log("\n" + "=".repeat(60));
-  console.log("  DEPLOYMENT COMPLETE — Base Sepolia");
+  console.log("  DEPLOYMENT COMPLETE — Base Mainnet");
   console.log("=".repeat(60));
   console.log();
-  console.log(`  Chain:                    Base Sepolia (${baseSepolia.id})`);
-  console.log(`  USDC:                     ${BASE_SEPOLIA_USDC}`);
+  console.log(`  Chain:                    Base Mainnet (${base.id})`);
+  console.log(`  USDC:                     ${BASE_USDC}`);
   console.log(`  ReputationRegistry:       ${reputationRegistryAddr}`);
   console.log(`  ReputationCreditOracle:   ${creditOracleAddr}`);
   console.log(`  TrustlessEscrow:          ${escrowAddr}`);
@@ -474,7 +474,7 @@ async function main() {
   console.log();
   console.log("  Governance:               " + account.address);
   console.log("  Escrow params:");
-  console.log(`    maxAdvanceRatioBps:      ${MAX_ADVANCE_RATIO_BPS} (${MAX_ADVANCE_RATIO_BPS / 100}%)`);
+  console.log(`    oracleRatio (fund-locked): ${FUND_LOCKED_ORACLE_RATIO_BPS} (${FUND_LOCKED_ORACLE_RATIO_BPS / 100}%)`);
   console.log(`    minCreditScore:          ${MIN_CREDIT_SCORE}`);
   console.log(`    feeBps:                  ${FEE_BPS} (${FEE_BPS / 100}%)`);
   console.log(`    hardCapPerAdvance:       ${Number(HARD_CAP_PER_ADVANCE) / 1e6} USDC`);
@@ -490,9 +490,9 @@ async function main() {
   console.log();
   const workerName = "credmesh";
   const secrets: Record<string, string> = {
-    CHAIN_RPC_URL: BASE_SEPOLIA_RPC,
-    CHAIN_ID: String(baseSepolia.id),
-    TEST_USDC: BASE_SEPOLIA_USDC,
+    CHAIN_RPC_URL: BASE_RPC,
+    CHAIN_ID: String(base.id),
+    TEST_USDC: BASE_USDC,
     REPUTATION_REGISTRY: reputationRegistryAddr,
     CREDIT_ESCROW: escrowAddr,
   };
@@ -504,7 +504,7 @@ async function main() {
   console.log("── Post-deployment (after 48h timelock) ──");
   console.log();
   console.log("  Execute the oracle add with:");
-  console.log(`  cast send ${escrowAddr} "executeOracleAdd(address)" ${receivableOracleAddr} --rpc-url ${BASE_SEPOLIA_RPC} --private-key <KEY>`);
+  console.log(`  cast send ${escrowAddr} "executeOracleAdd(address)" ${receivableOracleAddr} --rpc-url ${BASE_RPC} --private-key <KEY>`);
   console.log();
 }
 

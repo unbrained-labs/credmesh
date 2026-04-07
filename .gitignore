@@ -2,7 +2,12 @@ node_modules
 .wrangler
 dist
 .env
-docs/deployments.md
 
+# Private working docs (strategies, deployment keys, audit reports)
 docs/
+
+# Private agents (outreach, internal tooling)
+packages/outreach-agent/
+
+# Claude Code settings
 .claude/

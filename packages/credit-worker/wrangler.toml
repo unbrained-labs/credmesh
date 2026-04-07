@@ -1,4 +1,4 @@
-name = "trustvault-credit"
+name = "credmesh"
 main = "src/index.ts"
 compatibility_date = "2025-03-14"
 compatibility_flags = ["nodejs_compat"]
@@ -19,12 +19,20 @@ tag = "v1"
 new_classes = ["CreditAgent"]
 
 [vars]
-AGENT_NAME = "TrustVault Credit"
+AGENT_NAME = "CredMesh"
 CHAIN_RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com"
 IDENTITY_REGISTRY = "0xb5a8d645ff6c749f600a3ff31d71cdfad518737b"
 REPUTATION_REGISTRY = "0xfa20c33daa0bdf4d4b38c46952f2b2c95ace2ecf"
 CHAIN_ID = "11155111"
 
+# Base Sepolia — TrustlessEscrow v2 (hardened, on-chain enforced)
+BASE_SEPOLIA_RPC_URL = "https://base-sepolia-rpc.publicnode.com"
+BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+BASE_SEPOLIA_ESCROW = "0xc4fb24a176e3f50e8a8b4dc06bc7726867cd08d0"
+BASE_SEPOLIA_ORACLE = "0x3369d7167c9dffcb1bb931761f309501220ab6f4"
+BASE_SEPOLIA_CREDIT_ORACLE = "0xf711defcb21ca3a14377eb32858eb39525ac2213"
+BASE_SEPOLIA_REPUTATION = "0x4decd0a7c0431c76f3fd294f3602b55c04acb649"
+
 # Secrets (set via wrangler secret put):
-# AGENT_PRIVATE_KEY — wallet private key for signing txs
-# TEST_USDC — deployed TestUSDC token address (set after deploy)
+# AGENT_PRIVATE_KEY — wallet private key for signing txs (shared across chains)
+# TEST_USDC — deployed TestUSDC token address on Sepolia (set after deploy)

@@ -1,4 +1,4 @@
-# TrustVault Credit — Programmable Credit Infrastructure for Autonomous Agents
+# CredMesh — Programmable Credit Infrastructure for Autonomous Agents
 
 > Agentic banking: every advance, repayment, and reputation event is verifiable on-chain. Agents borrow against future earnings, spend on compute/APIs/gas, repay automatically from job payouts.
 
@@ -182,7 +182,7 @@ Check current rates: `GET /fees`
 
 ## Payment Rails
 
-TrustVault Credit supports multiple payment methods. Check `GET /payment/methods` for live status.
+CredMesh supports multiple payment methods. Check `GET /payment/methods` for live status.
 
 | Rail | Type | Status | How |
 |------|------|--------|-----|
@@ -206,16 +206,16 @@ Advances are real tUSDC transfers via the escrow contract. Reputation is written
 
 ## For Liquidity Providers
 
-Deposit tUSDC into the ERC-4626 vault. You receive `tvCREDIT` shares. As agents repay advances with fees, the share price increases. 85% of credit fees flow to depositors.
+Deposit tUSDC into the ERC-4626 vault. You receive `cmCREDIT` shares. As agents repay advances with fees, the share price increases. 85% of credit fees flow to depositors.
 
 **Assess the opportunity:** `GET /vault/opportunity` — live APY, risk metrics, pool stats, deposit instructions.
 
 **Check your position:** `GET /vault/position/:address` — your shares, current value, accrued yield.
 
-**Deposit via dashboard:** https://trustvault-dashboard.pages.dev — connect wallet, click deposit.
+**Deposit via dashboard:** https://credmesh-dashboard.pages.dev — connect wallet, click deposit.
 
 Idle capital is withdrawable instantly. Deployed capital (in active advances) unlocks as agents repay.
 
 ## Dashboard
 
-Human-readable monitoring: https://trustvault-dashboard.pages.dev
+Human-readable monitoring: https://credmesh-dashboard.pages.dev

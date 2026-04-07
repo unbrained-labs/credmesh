@@ -1,5 +1,5 @@
 /**
- * Payment rails integration — modular payment methods for TrustVault Credit.
+ * Payment rails integration — modular payment methods for CredMesh.
  *
  * Supports:
  * 1. Direct transfer + on-chain tx verification (works now, any EVM chain)
@@ -69,7 +69,7 @@ export function getPaymentMethods(env: {
   });
 
   return {
-    description: "TrustVault Credit accepts multiple payment rails. Use /payment/methods to discover available options. MPP (mppx) is the recommended agent-native protocol.",
+    description: "CredMesh accepts multiple payment rails. Use /payment/methods to discover available options. MPP (mppx) is the recommended agent-native protocol.",
     methods,
     agentIntegration: {
       recommended: "mppx",
@@ -78,7 +78,7 @@ export function getPaymentMethods(env: {
       docs: "https://mpp.dev/sdk/typescript",
     },
     lpIntegration: {
-      dashboard: "https://trustvault-dashboard.pages.dev (connect wallet, deposit)",
+      dashboard: "https://credmesh-dashboard.pages.dev (connect wallet, deposit)",
       api: "GET /vault/opportunity (assess yield, risk, deposit instructions)",
       vault: env.CREDIT_VAULT ?? "not configured",
     },

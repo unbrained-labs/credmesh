@@ -1,10 +1,11 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { createMiddleware } from "hono/factory";
 import { agentCard } from "./agent-card";
 import { CreditAgent } from "./engine";
 import { listScenarios } from "./demo";
 import { checkIdentityRegistration } from "./erc8004";
-import { isChainEnabled, isEscrowEnabled, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens, getVaultPosition, verifyPayment } from "./chain";
+import { isChainEnabled, isEscrowEnabled, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens, getVaultPosition, verifyPayment, isTrustlessEnabled, getTrustlessConfig, getTrustlessParams, getOnchainCredit, buildAdvanceCalldata, verifyTrustlessAdvance, registerReceivable } from "./chain";
 import { authMiddleware, assertAuthorized, AuthorizationError } from "./auth";
 import { computeFee, PROTOCOL_FEE_BPS } from "./pricing";
 import { positiveNumber, boundedString, ethAddress } from "./validate";
@@ -14,13 +15,20 @@ import { mppGate, isMppEnabled } from "./mpp";
 import { landingHTML } from "./landing";
 import { getActiveChains, getChainConfig, getChainClients, explorerUrl } from "./chains";
 import { respond } from "./html-wrap";
+import { SKILL_MD } from "./skill-content";
+import { errMsg } from "./utils";
+import { pad } from "viem";
 import type { AgentRegistrationInput, Env, PortfolioReport, RiskReport, SpendCategory, TimelineEvent, TreasuryState } from "./types";
 
 export { CreditAgent };
 
 const app = new Hono<{ Bindings: Env; Variables: { verifiedAddress: string } }>();
 
-app.use("*", cors());
+app.use("*", cors({
+  origin: ["https://credmesh-dashboard.pages.dev", "https://credit.unbrained.club"],
+  allowMethods: ["GET", "POST", "OPTIONS"],
+  allowHeaders: ["Content-Type", "X-Agent-Address", "X-Agent-Signature", "X-Agent-Timestamp", "X-Admin-Secret", "Accept"],
+}));
 
 // Auth on financial endpoints — POST requires wallet signature, GET is public
 app.use("/agents/*", authMiddleware);
@@ -28,7 +36,16 @@ app.use("/credit/*", authMiddleware);
 app.use("/marketplace/*", authMiddleware);
 app.use("/spend/*", authMiddleware);
 app.use("/treasury/*", authMiddleware);
-// Demo/bootstrap endpoints are intentionally public (judges, dashboards, agents bootstrapping)
+app.use("/mandates/*", authMiddleware);
+
+// Admin-only guard for destructive endpoints (demo/reset, testnet setup)
+const adminGuard = createMiddleware<{ Bindings: Env }>(async (c, next) => {
+  const secret = c.req.header("X-Admin-Secret");
+  const expected = (c.env as unknown as Record<string, string>).ADMIN_SECRET;
+  if (!expected) return c.json({ error: "Admin endpoints disabled." }, 403);
+  if (secret !== expected) return c.json({ error: "Invalid admin secret." }, 403);
+  await next();
+});
 
 // ─── Root (Landing Page) ───
 
@@ -48,13 +65,19 @@ app.get("/", (c) => {
 
 app.get("/.well-known/agent.json", (c) => c.json(agentCard(c.env)));
 
+app.get("/skill.md", (c) => {
+  c.header("Content-Type", "text/markdown; charset=utf-8");
+  c.header("Cache-Control", "public, max-age=3600");
+  return c.body(SKILL_MD);
+});
+
 app.get("/agent.json", (c) => c.json(devSpotManifest()));
 
 app.get("/agent_log.json", async (c) => {
   const agent = getAgent(c.env);
   const timeline: TimelineEvent[] = await agent.getTimeline(100);
   return c.json({
-    agent: "TrustVault Credit",
+    agent: "CredMesh",
     version: "0.2.0",
     generated: new Date().toISOString(),
     entries: timeline.map((e) => ({
@@ -71,10 +94,10 @@ app.get("/agent_log.json", async (c) => {
 
 app.get("/use-cases", (c) => {
   return c.json({
-    title: "Who uses TrustVault Credit?",
+    title: "Who uses CredMesh?",
     forAgents: {
       headline: "Agents that accept work and need upfront capital",
-      description: "You've been hired for a job. Payment comes after delivery. But you need to spend NOW on compute, APIs, gas, or sub-agents. TrustVault Credit advances you working capital against your guaranteed payout.",
+      description: "You've been hired for a job. Payment comes after delivery. But you need to spend NOW on compute, APIs, gas, or sub-agents. CredMesh advances you working capital against your guaranteed payout.",
       examples: [
         {
           name: "Quantitative Trading Agent",
@@ -82,7 +105,7 @@ app.get("/use-cases", (c) => {
           howItWorks: "Agent posts the strategy as a job (expectedPayout: $300, duration: 6h). Requests $100 advance. Pays for data, compute, and gas over 6 hours as the strategy executes. Completes job. Waterfall: $100 principal + $3 fee repaid. Agent nets $197.",
           duration: "4-12 hours",
           feeRange: "2-3% (short duration, proven trader history)",
-          whyCredit: "Unlike flash loans (same-block atomic), trading agents need capital ACROSS blocks — for data, compute, and multi-step execution over hours. TrustVault Credit bridges this gap.",
+          whyCredit: "Unlike flash loans (same-block atomic), trading agents need capital ACROSS blocks — for data, compute, and multi-step execution over hours. CredMesh bridges this gap.",
         },
         {
           name: "Code Generation Agent",
@@ -120,10 +143,10 @@ app.get("/use-cases", (c) => {
         risk: "Default risk. Mitigated by: receivable-backed advances (30% max of job payout), credit scoring, reputation history, and the pool loss surcharge that rebuilds reserves.",
       },
       howToDeposit: {
-        step1: "Go to https://trustvault-dashboard.pages.dev",
+        step1: "Go to https://credmesh-dashboard.pages.dev",
         step2: "Click 'Connect Wallet' in the Vault panel",
         step3: "Enter amount → Deposit (wallet handles approve + deposit in one flow)",
-        step4: "Receive tvCREDIT shares — share price increases as fees accumulate",
+        step4: "Receive cmCREDIT shares — share price increases as fees accumulate",
         step5: "Withdraw idle capital from the same panel (deployed capital unlocks as advances repay)",
       },
       faucet: "Need testnet tUSDC? POST https://credit.unbrained.club/faucet/0xYourAddress",
@@ -145,7 +168,7 @@ app.get("/health", async (c) => {
   const vaultStats = c.env.CREDIT_VAULT ? await getVaultStats(c.env) : null;
   return c.json({
     status: "ok",
-    agent: c.env.AGENT_NAME || "TrustVault Credit",
+    agent: c.env.AGENT_NAME || "CredMesh",
     version: "0.5.0",
     timestamp: Date.now(),
     chain: {
@@ -186,12 +209,12 @@ app.get("/vault/opportunity", async (c) => {
 
   const data = {
     type: "yield-opportunity",
-    protocol: "TrustVault Credit",
+    protocol: "CredMesh",
     asset: "tUSDC",
     network: "eip155:11155111",
     vault: {
       standard: "ERC-4626",
-      shareToken: "tvCREDIT",
+      shareToken: "cmCREDIT",
       sharePrice: vaultStats?.sharePrice ?? "1.000000",
       totalAssets: vaultStats?.totalAssets ?? "0",
       totalShares: vaultStats?.totalShares ?? "0",
@@ -232,9 +255,9 @@ app.get("/vault/opportunity", async (c) => {
       vaultContract: c.env.CREDIT_VAULT ?? "not configured",
       steps: [
         { action: "approve", target: "token", method: "approve(vaultAddress, amount)", description: "Allow vault to pull your tUSDC" },
-        { action: "deposit", target: "vault", method: "deposit(amount, yourAddress)", description: "Deposit tUSDC, receive tvCREDIT shares" },
+        { action: "deposit", target: "vault", method: "deposit(amount, yourAddress)", description: "Deposit tUSDC, receive cmCREDIT shares" },
       ],
-      withdraw: { method: "redeem(shares, yourAddress, yourAddress)", description: "Burn tvCREDIT shares, receive tUSDC (up to idle capital — deployed capital unlocks as advances repay)" },
+      withdraw: { method: "redeem(shares, yourAddress, yourAddress)", description: "Burn cmCREDIT shares, receive tUSDC (up to idle capital — deployed capital unlocks as advances repay)" },
       abi: {
         deposit: "function deposit(uint256 assets, address receiver) returns (uint256 shares)",
         redeem: "function redeem(uint256 shares, address receiver, address owner) returns (uint256 assets)",
@@ -250,8 +273,8 @@ app.get("/vault/opportunity", async (c) => {
   };
   return respond(c, data, {
     title: "Vault Yield Opportunity",
-    description: "Live yield data for TrustVault Credit liquidity providers. Deposit USDC, earn fees from agent credit advances.",
-    cta: { label: "Connect Wallet & Deposit", href: "https://trustvault-dashboard.pages.dev#deposit" },
+    description: "Live yield data for CredMesh liquidity providers. Deposit USDC, earn fees from agent credit advances.",
+    cta: { label: "Connect Wallet & Deposit", href: "https://credmesh-dashboard.pages.dev#deposit" },
   });
 });
 
@@ -275,7 +298,7 @@ app.get("/vault/position/:address", async (c) => {
     },
     position: {
       shares: position?.shares ?? "0",
-      sharesToken: "tvCREDIT",
+      sharesToken: "cmCREDIT",
       currentValue: position?.value ?? "0",
       currentValueToken: "tUSDC",
       estimatedYield: earned > 0 ? earned.toFixed(6) : "0",
@@ -346,6 +369,119 @@ app.post("/credit/default", async (c) => {
   const body = await c.req.json<{ advanceId: string; agentAddress: string; reason: string }>();
   assertAuthorized(c.get("verifiedAddress"), body.agentAddress);
   return c.json(await getAgent(c.env).defaultAdvance(body));
+});
+
+// ─── Trustless Advance (Base Sepolia — on-chain enforced) ───
+// The agent calls TrustlessEscrow.requestAdvance() directly on-chain.
+// The contract enforces: credit score, exposure limit, receivable verification,
+// advance ratio cap, hard cap. No operator approval possible.
+
+app.get("/credit/trustless", async (c) => {
+  if (!isTrustlessEnabled(c.env)) {
+    return c.json({ available: false, reason: "Base Sepolia TrustlessEscrow not configured." });
+  }
+  const config = getTrustlessConfig(c.env);
+  const params = await getTrustlessParams(c.env);
+  return c.json({
+    available: true,
+    description: "On-chain enforced advances. The agent calls requestAdvance() directly — no operator approval. Contract enforces credit score, exposure limits, receivable verification, and advance caps.",
+    contracts: config,
+    parameters: params,
+    flow: [
+      "1. Receivable must exist in the oracle (registered by job client or protocol)",
+      "2. POST /credit/advance-onchain to get calldata + instructions",
+      "3. Agent calls TrustlessEscrow.requestAdvance() on Base Sepolia",
+      "4. Contract verifies everything on-chain and transfers USDC to agent",
+      "5. POST /credit/advance-verify with txHash to record in worker state",
+    ],
+    abi: {
+      requestAdvance: "function requestAdvance(address oracle, bytes32 receivableId, uint256 requestedAmount) external returns (bytes32 advanceId)",
+      settle: "function settle(bytes32 advanceId, uint256 payoutAmount) external",
+      liquidate: "function liquidate(bytes32 advanceId) external — callable by anyone after expiry",
+    },
+  });
+});
+
+app.post("/credit/advance-onchain", async (c) => {
+  const body = await c.req.json<{
+    agentAddress: string;
+    jobId: string;
+    requestedAmount: number;
+    purpose: string;
+  }>();
+  assertAuthorized(c.get("verifiedAddress"), body.agentAddress);
+  body.requestedAmount = positiveNumber(body.requestedAmount, "requestedAmount");
+
+  if (!isTrustlessEnabled(c.env)) {
+    return c.json({ error: "TrustlessEscrow not configured. Use POST /credit/advance for custodial path." }, 501);
+  }
+
+  const config = getTrustlessConfig(c.env)!;
+
+  // Run the same quoting logic for the agent's benefit
+  const agent = getAgent(c.env);
+  const quote = await agent.quoteAdvance(body);
+
+  // Get on-chain credit standing
+  const onchainCredit = await getOnchainCredit(c.env, body.agentAddress);
+
+  // Build the receivable ID from the job ID
+  const receivableId = pad(`0x${body.jobId.replace(/-/g, "")}` as `0x${string}`, { size: 32 });
+
+  // Build calldata for the agent to submit
+  const calldata = buildAdvanceCalldata(config.oracle, receivableId, body.requestedAmount);
+
+  return c.json({
+    quote,
+    onchainCredit,
+    onchain: {
+      chain: "base-sepolia",
+      chainId: 84532,
+      to: config.escrow,
+      calldata,
+      method: "requestAdvance(address oracle, bytes32 receivableId, uint256 requestedAmount)",
+      args: {
+        oracle: config.oracle,
+        receivableId,
+        requestedAmount: body.requestedAmount,
+        requestedAmountWei: (body.requestedAmount * 1e6).toString(),
+      },
+      gasEstimate: "200000",
+      note: "Agent must call this directly — contract verifies msg.sender == receivable beneficiary. No operator approval possible.",
+    },
+    explorer: `${config.explorer}/address/${config.escrow}`,
+  });
+});
+
+app.post("/credit/advance-verify", async (c) => {
+  const body = await c.req.json<{
+    agentAddress: string;
+    txHash: string;
+  }>();
+  assertAuthorized(c.get("verifiedAddress"), body.agentAddress);
+
+  if (!isTrustlessEnabled(c.env)) {
+    return c.json({ error: "TrustlessEscrow not configured." }, 501);
+  }
+
+  const advance = await verifyTrustlessAdvance(c.env, body.txHash);
+  if (!advance) {
+    return c.json({ error: "No AdvanceIssued event found in transaction.", txHash: body.txHash }, 404);
+  }
+
+  // Verify the advance belongs to the authenticated agent
+  if (advance.agent.toLowerCase() !== body.agentAddress.toLowerCase()) {
+    return c.json({ error: "Advance does not belong to authenticated agent." }, 403);
+  }
+
+  return c.json({
+    verified: true,
+    advance,
+    settlement: {
+      method: "settle(bytes32 advanceId, uint256 payoutAmount)",
+      note: "Anyone can settle. Must send at least principal amount in USDC.",
+    },
+  });
 });
 
 // ─── Marketplace: Legacy (direct assignment) ───
@@ -472,6 +608,9 @@ app.post("/marketplace/post", async (c) => {
     requiredCapabilities?: string[];
   }>();
   assertAuthorized(c.get("verifiedAddress"), body.postedBy);
+  if (body.requiredCapabilities && body.requiredCapabilities.length > 20) {
+    return c.json({ error: "Too many requiredCapabilities (max 20)." }, 400);
+  }
   return c.json(await getAgent(c.env).postJob(body));
 });
 
@@ -488,6 +627,8 @@ app.post("/marketplace/jobs/:jobId/bid", async (c) => {
     pitch: string;
   }>();
   assertAuthorized(c.get("verifiedAddress"), body.agentAddress);
+  body.pitch = boundedString(body.pitch, "pitch", 1000);
+  if (body.capabilities.length > 20) throw new Error("Too many capabilities (max 20).");
   return c.json(
     await getAgent(c.env).submitBid({
       jobId: c.req.param("jobId"),
@@ -551,6 +692,66 @@ app.get("/treasury", async (c) => {
   return c.json(await getAgent(c.env).getTreasury());
 });
 
+// ─── Mandates ───
+
+app.post("/mandates", async (c) => {
+  const body = await c.req.json<{
+    funder: string;
+    budgetUsdc: number;
+    allowedCategories: string[];
+    maxPerTask: number;
+    maxDurationHours: number;
+    minCreditScore: number;
+    requiredReceivableType?: "escrow" | "trading-balance" | "vault-equity" | "any";
+    capitalOrigin?: "direct" | "vault" | "treasury";
+  }>();
+  assertAuthorized(c.get("verifiedAddress"), body.funder);
+  body.budgetUsdc = positiveNumber(body.budgetUsdc, "budgetUsdc");
+  body.maxPerTask = positiveNumber(body.maxPerTask, "maxPerTask");
+  body.maxDurationHours = positiveNumber(body.maxDurationHours, "maxDurationHours");
+  return c.json(await getAgent(c.env).createMandate(body));
+});
+
+app.get("/mandates", async (c) => {
+  const status = c.req.query("status");
+  const funder = c.req.query("funder");
+  return c.json(await getAgent(c.env).listMandates({
+    status: status || undefined,
+    funder: funder || undefined,
+  }));
+});
+
+app.get("/mandates/:id", async (c) => {
+  const mandate = await getAgent(c.env).getMandate(c.req.param("id"));
+  if (!mandate) return c.json({ error: "Mandate not found." }, 404);
+  return c.json(mandate);
+});
+
+app.post("/mandates/:id/status", async (c) => {
+  const body = await c.req.json<{ status: "paused" | "active" | "closed" }>();
+  return c.json(await getAgent(c.env).updateMandateStatus({
+    mandateId: c.req.param("id"),
+    callerAddress: c.get("verifiedAddress"),
+    status: body.status,
+  }));
+});
+
+app.post("/mandates/:id/advance", async (c) => {
+  const body = await c.req.json<{
+    agentAddress: string;
+    jobId: string;
+    requestedAmount: number;
+    purpose: string;
+  }>();
+  assertAuthorized(c.get("verifiedAddress"), body.agentAddress);
+  body.requestedAmount = positiveNumber(body.requestedAmount, "requestedAmount");
+  body.purpose = boundedString(body.purpose, "purpose");
+  return c.json(await getAgent(c.env).advanceFromMandate({
+    mandateId: c.req.param("id"),
+    ...body,
+  }));
+});
+
 // ─── Fee Transparency ───
 
 app.get("/fees", async (c) => {
@@ -601,6 +802,10 @@ app.post("/spend/record", async (c) => {
     vendor: string;
     description: string;
   }>();
+  const VALID_CATEGORIES: SpendCategory[] = ["compute", "api", "gas", "sub-agent", "browser", "storage", "other"];
+  if (!VALID_CATEGORIES.includes(body.category)) {
+    return c.json({ error: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(", ")}` }, 400);
+  }
   body.amount = positiveNumber(body.amount, "amount");
   body.vendor = boundedString(body.vendor, "vendor");
   body.description = boundedString(body.description, "description");
@@ -634,19 +839,95 @@ app.get("/timeline", async (c) => {
 
 // ─── Demo ───
 
-app.post("/demo/bootstrap", async (c) => {
+app.post("/demo/bootstrap", adminGuard, async (c) => {
   const { scenario } = await c.req.json<{
     scenario?: "happy" | "failure" | "both";
   }>();
   return c.json(await getAgent(c.env).bootstrapDemo(scenario ?? "both"));
 });
 
-app.post("/demo/reset", async (c) => {
+app.post("/demo/reset", adminGuard, async (c) => {
   return c.json(await getAgent(c.env).resetState());
 });
 
 app.get("/demo/scenarios", (c) => {
   return c.json(listScenarios());
+});
+
+// ─── Testnet: Trustless E2E Setup ───
+// Sets up on-chain state for a full trustless advance test:
+// 1. Writes reputation for the agent (so credit oracle reports score >= minCreditScore)
+// 2. Registers a funded receivable in the oracle (worker pays USDC)
+// 3. Sends ETH to the agent for gas
+
+app.post("/testnet/setup-trustless", adminGuard, async (c) => {
+  const body = await c.req.json<{
+    agentAddress: string;
+    receivableId: string; // hex bytes32
+    receivableAmount: number; // USDC
+  }>();
+  const address = ethAddress(body.agentAddress, "agentAddress");
+  const amount = positiveNumber(body.receivableAmount, "receivableAmount");
+
+  if (!isTrustlessEnabled(c.env)) {
+    return c.json({ error: "TrustlessEscrow not configured." }, 501);
+  }
+
+  const config = getChainConfig(c.env, "base-sepolia");
+  if (!config) return c.json({ error: "Base Sepolia not configured." }, 501);
+
+  const { walletClient, publicClient, account } = getChainClients(config);
+  const results: Record<string, unknown> = {};
+
+  // 1. Write reputation so credit oracle reports score >= 20
+  try {
+    const repHash = await walletClient.writeContract({
+      address: config.reputation! as `0x${string}`,
+      abi: [{ type: "function", name: "addReputation", inputs: [{ name: "agent", type: "address" }, { name: "score", type: "uint256" }, { name: "evidence", type: "string" }], outputs: [], stateMutability: "nonpayable" }] as const,
+      functionName: "addReputation",
+      args: [address as `0x${string}`, 50n, "testnet-setup: e2e trustless advance test"],
+      account,
+    });
+    await publicClient.waitForTransactionReceipt({ hash: repHash });
+    results.reputation = { txHash: repHash, score: 50 };
+  } catch (e: unknown) {
+    results.reputation = { error: errMsg(e) };
+  }
+
+  // 2. Register receivable (worker funds it with USDC)
+  try {
+    const regResult = await registerReceivable(
+      c.env,
+      body.receivableId as `0x${string}`,
+      address,
+      amount,
+    );
+    results.receivable = regResult;
+  } catch (e: unknown) {
+    results.receivable = { error: errMsg(e) };
+  }
+
+  // 3. Send ETH for gas — wait to avoid nonce collision with receivable txs
+  try {
+    await new Promise((r) => setTimeout(r, 2000));
+    const ethHash = await walletClient.sendTransaction({
+      to: address as `0x${string}`,
+      value: 100000000000000n, // 0.0001 ETH
+      account,
+    });
+    await publicClient.waitForTransactionReceipt({ hash: ethHash });
+    results.gas = { txHash: ethHash, amount: "0.0001 ETH" };
+  } catch (e: unknown) {
+    results.gas = { error: errMsg(e) };
+  }
+
+  return c.json({
+    agent: address,
+    receivableId: body.receivableId,
+    receivableAmount: amount,
+    setup: results,
+    nextStep: "Agent calls TrustlessEscrow.requestAdvance() with the receivableId",
+  });
 });
 
 // ─── Faucet (testnet only) ───
@@ -770,7 +1051,7 @@ app.get("/bootstrap", (c) => {
 app.get("/chains", (c) => {
   const active = getActiveChains(c.env);
   return c.json({
-    description: "Active chains where TrustVault Credit contracts are deployed. Add a chain by setting {PREFIX}_RPC_URL + {PREFIX}_USDC environment variables.",
+    description: "Active chains where CredMesh contracts are deployed. Add a chain by setting {PREFIX}_RPC_URL + {PREFIX}_USDC environment variables.",
     chains: active,
     count: active.length,
   });
@@ -875,8 +1156,8 @@ app.get("/auth/info", (c) => {
       "X-Agent-Signature": "0x... (EIP-191 signature of the message below)",
       "X-Agent-Timestamp": "Unix seconds (must be within 5 minutes of server time)",
     },
-    message: "trustvault-credit:{address}:{timestamp}",
-    example: "trustvault-credit:0xabcdef1234567890abcdef1234567890abcdef12:1711234567",
+    message: "credmesh:{address}:{timestamp}",
+    example: "credmesh:0xabcdef1234567890abcdef1234567890abcdef12:1711234567",
     note: "GET requests are public. POST/PUT/DELETE require authentication. Sign with any EIP-191 compatible wallet (ethers.js, viem, MetaMask).",
     readEndpoints: "GET /health, /fees, /bootstrap, /treasury, /timeline, /onchain/:address — no auth needed",
   });
@@ -888,6 +1169,7 @@ app.onError((error, c) => {
   }
   const msg = error.message;
   const safe = msg.startsWith("Unknown ") || msg.startsWith("Job is ") || msg.startsWith("Advance is ")
+    || msg.startsWith("Only the ") || msg.startsWith("No ") || msg.startsWith("Category ")
     ? msg
     : "Request failed.";
   console.error("Request error:", msg);
@@ -895,13 +1177,13 @@ app.onError((error, c) => {
 });
 
 function getAgent(env: Env): DurableObjectStub<CreditAgent> {
-  const id = env.CREDIT_AGENT.idFromName("trustvault-credit-singleton");
+  const id = env.CREDIT_AGENT.idFromName("credmesh-singleton");
   return env.CREDIT_AGENT.get(id) as DurableObjectStub<CreditAgent>;
 }
 
 function devSpotManifest() {
   return {
-    name: "TrustVault Credit",
+    name: "CredMesh",
     description: "Programmable working capital for autonomous agents. Revenue-backed microcredit with dynamic utilization-based fees, on-chain escrow, ERC-4626 vault for depositor yield, and reputation-linked underwriting.",
     operator_wallet: "0xa3D3E3859C7EE7EEA5d682A4BaC19c45aDB82388",
     erc8004_identity: {
@@ -940,7 +1222,7 @@ function devSpotManifest() {
       health: "/health",
       agent_card: "/.well-known/agent.json",
       agent_log: "/agent_log.json",
-      dashboard: "https://trustvault-dashboard.pages.dev",
+      dashboard: "https://credmesh-dashboard.pages.dev",
     },
     version: "0.2.0",
   };

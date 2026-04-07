@@ -24,3 +24,8 @@ export function repaymentRate(repaid: number, defaulted: number): number {
   const total = repaid + defaulted;
   return total === 0 ? 1 : roundTo(repaid / total, 2);
 }
+
+/** Extract error message from unknown catch value. */
+export function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}

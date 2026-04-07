@@ -124,7 +124,7 @@ export async function withdrawFromVault(shares: string, vaultAddress: string): P
   if (!signer) throw new Error('Wallet not connected');
 
   const vault = new Contract(vaultAddress, VAULT_ABI, signer);
-  const parsedShares = parseUnits(shares, 6); // tvCREDIT has 6 decimals (same as underlying)
+  const parsedShares = parseUnits(shares, 6); // cmCREDIT has 6 decimals (same as underlying)
   const address = await signer.getAddress();
 
   const redeemTx = await vault.redeem(parsedShares, address, address);

@@ -66,7 +66,7 @@ async function main() {
   console.log(`\nDeploying CreditVault(token=${TOKEN})...`);
   const hash = await walletClient.deployContract({
     abi, bytecode,
-    args: [TOKEN, "TrustVault Credit Shares", "tvCREDIT"],
+    args: [TOKEN, "CredMesh Shares", "cmCREDIT"],
   });
   console.log(`Tx: https://sepolia.etherscan.io/tx/${hash}`);
 
@@ -124,12 +124,12 @@ async function main() {
   });
 
   console.log(`\nVault total assets: ${Number(totalAssets) / 1e6} tUSDC`);
-  console.log(`Depositor shares: ${Number(shares) / 1e6} tvCREDIT`);
+  console.log(`Depositor shares: ${Number(shares) / 1e6} cmCREDIT`);
 
   console.log(`\n=== DONE ===`);
   console.log(`Vault: ${vaultAddr}`);
   console.log(`\nSet secret:`);
-  console.log(`  echo "${vaultAddr}" | npx wrangler secret put CREDIT_VAULT --name trustvault-credit`);
+  console.log(`  echo "${vaultAddr}" | npx wrangler secret put CREDIT_VAULT --name credmesh`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

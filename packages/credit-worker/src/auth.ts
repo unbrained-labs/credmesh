@@ -7,7 +7,7 @@ import type { Env } from "./types";
  *
  * Headers:
  *   X-Agent-Address: 0x...
- *   X-Agent-Signature: 0x... (signature of "trustvault-credit:{address}:{timestamp}")
+ *   X-Agent-Signature: 0x... (signature of "credmesh:{address}:{timestamp}")
  *   X-Agent-Timestamp: unix seconds
  *
  * Behavior:
@@ -41,7 +41,7 @@ export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Varia
     if (!address || !signature || !timestamp) {
       return c.json({
         error: "Authentication required.",
-        hint: "Send X-Agent-Address, X-Agent-Signature, X-Agent-Timestamp headers. Sign message: trustvault-credit:{address}:{timestamp}",
+        hint: "Send X-Agent-Address, X-Agent-Signature, X-Agent-Timestamp headers. Sign message: credmesh:{address}:{timestamp}",
       }, 401);
     }
 
@@ -89,7 +89,7 @@ async function verifyHeaders(
   if (now - ts > MAX_AGE_SECONDS) return null; // reject expired timestamps
 
   const normalizedAddress = address.toLowerCase();
-  const message = `trustvault-credit:${normalizedAddress}:${timestamp}`;
+  const message = `credmesh:${normalizedAddress}:${timestamp}`;
 
   try {
     const valid = await verifyMessage({

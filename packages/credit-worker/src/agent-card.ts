@@ -3,13 +3,13 @@ import type { Env } from "./types";
 /**
  * A2A-compatible agent card.
  * Follows the Google A2A protocol spec for `/.well-known/agent.json`
- * with additional TrustVault Credit-specific fields.
+ * with additional CredMesh-specific fields.
  */
 export function agentCard(env: Env) {
   const base = "https://credit.unbrained.club";
   return {
     // ── A2A Standard Fields ──
-    name: env.AGENT_NAME || "TrustVault Credit",
+    name: env.AGENT_NAME || "CredMesh",
     description:
       "Programmable working capital for autonomous agents. Underwrites revenue-backed advances against marketplace receivables, enforces spend controls, and settles repayment via on-chain waterfall.",
     url: base,
@@ -79,7 +79,7 @@ export function agentCard(env: Env) {
       {
         id: "discover",
         name: "Discover",
-        description: "Learn how to use TrustVault Credit. No auth needed. Start here.",
+        description: "Learn how to use CredMesh. No auth needed. Start here.",
         inputModes: ["application/json"],
         outputModes: ["application/json"],
         endpoints: [
@@ -95,7 +95,7 @@ export function agentCard(env: Env) {
         ],
       },
     ],
-    // ── TrustVault Credit Extensions ──
+    // ── CredMesh Extensions ──
     defaultInputModes: ["application/json"],
     defaultOutputModes: ["application/json"],
     authentication: {
@@ -133,8 +133,8 @@ export function agentCard(env: Env) {
       fees: `${base}/fees`,
       agentCard: `${base}/.well-known/agent.json`,
       agentLog: `${base}/agent_log.json`,
-      dashboard: "https://trustvault-dashboard.pages.dev",
-      skillGuide: "https://github.com/unbrained-labs/trustvault-credit/blob/main/SKILL.md",
+      dashboard: "https://credmesh-dashboard.pages.dev",
+      skillGuide: "https://github.com/unbrained-labs/credmesh/blob/main/SKILL.md",
       api: {
         registerAgent: { method: "POST", path: "/agents/register" },
         getAgent: { method: "GET", path: "/agents/:address" },

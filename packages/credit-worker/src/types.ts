@@ -17,6 +17,8 @@ export interface Env {
   BASE_SEPOLIA_VAULT?: string;
   BASE_SEPOLIA_REPUTATION?: string;
   BASE_SEPOLIA_IDENTITY?: string;
+  BASE_SEPOLIA_ORACLE?: string;        // RegistryReceivableOracle address
+  BASE_SEPOLIA_CREDIT_ORACLE?: string; // ReputationCreditOracle address
   // Base mainnet chain
   BASE_RPC_URL?: string;
   BASE_PRIVATE_KEY?: string;
@@ -31,6 +33,8 @@ export interface Env {
   X402_FACILITATOR_URL?: string;
   X402_PAY_TO?: string;
   X402_NETWORK?: string;
+  // Admin
+  ADMIN_SECRET?: string;  // Shared secret for demo/reset and testnet-setup endpoints
 }
 
 export interface AgentRegistrationInput {
@@ -151,10 +155,45 @@ export interface AgentState {
   jobs: Record<string, JobReceivable>;
   advances: Record<string, CreditAdvance>;
   bids: Record<string, Bid>;
+  mandates: Record<string, Mandate>;
   treasury: TreasuryState;
   spendRecords: Record<string, SpendRecord>;
   timeline: TimelineEvent[];
   consumedPayments: Record<string, string>; // txHash → jobId (prevents replay)
+}
+
+// ── Mandates ──
+
+/** A funded intent — capital allocated with policy constraints, not tied to a specific job. */
+export interface Mandate {
+  id: string;
+  /** Address of the capital source (vault operator, treasury, direct funder) */
+  funder: string;
+  /** How the capital arrived */
+  capitalOrigin: "direct" | "vault" | "treasury";
+  /** Total USDC budget for this mandate */
+  budgetUsdc: number;
+  /** Job categories workers can use this mandate for */
+  allowedCategories: string[];
+  /** Max advance per individual task */
+  maxPerTask: number;
+  /** Max advance duration in hours */
+  maxDurationHours: number;
+  /** Minimum borrower credit score */
+  minCreditScore: number;
+  /** Required receivable type (or "any") */
+  requiredReceivableType: "escrow" | "trading-balance" | "vault-equity" | "any";
+  /** USDC currently deployed in active advances */
+  allocated: number;
+  /** USDC repaid from completed advances */
+  returned: number;
+  /** Fees earned from advances funded by this mandate */
+  feesEarned: number;
+  /** Number of advances issued */
+  advanceCount: number;
+  status: "active" | "paused" | "depleted" | "closed";
+  createdAt: number;
+  updatedAt: number;
 }
 
 // ── Marketplace ──
@@ -254,6 +293,9 @@ export interface TimelineEvent {
     | "quote_issued"
     | "spend_recorded"
     | "deposit_received"
+    | "mandate_created"
+    | "mandate_updated"
+    | "mandate_advance"
     | "state_reset";
   actor: string;
   description: string;

@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { computeCreditProfile, quoteAdvance } from "./credit";
+import type { StateStore } from "./store";
 import { createEvent, computePortfolio, computeRisk, generateHappyPath, generateFailurePath } from "./demo";
 import { rankBids, evaluateBid, awardJob } from "./marketplace";
 import {
@@ -22,6 +23,7 @@ import type {
   CreditQuote,
   Env,
   JobReceivable,
+  Mandate,
   PortfolioReport,
   RiskReport,
   SpendCategory,
@@ -40,6 +42,7 @@ const DEFAULT_STATE: AgentState = {
   jobs: {},
   advances: {},
   bids: {},
+  mandates: {},
   treasury: { ...DEFAULT_TREASURY },
   spendRecords: {},
   timeline: [],
@@ -49,10 +52,23 @@ const DEFAULT_STATE: AgentState = {
 export class CreditAgent extends DurableObject<Env> {
   private state!: AgentState;
   private initialized = false;
+  private store?: StateStore;
+
+  /** Create a standalone instance (non-CF) with a pluggable StateStore */
+  static createStandalone(env: Env, store: StateStore): CreditAgent {
+    // Create instance without DO constructor (for non-CF runtimes)
+    const agent = Object.create(CreditAgent.prototype) as CreditAgent;
+    agent.env = env;
+    agent.store = store;
+    agent.initialized = false;
+    return agent;
+  }
 
   private async init(): Promise<void> {
     if (this.initialized) return;
-    const stored = await this.ctx.storage.get<AgentState>("state");
+    const stored = this.store
+      ? await this.store.load()
+      : await this.ctx.storage.get<AgentState>("state");
     this.state = stored ?? structuredClone(DEFAULT_STATE);
     if (!this.state.bids) this.state.bids = {};
     if (!this.state.treasury) this.state.treasury = { ...DEFAULT_TREASURY };
@@ -62,11 +78,16 @@ export class CreditAgent extends DurableObject<Env> {
     if (!this.state.spendRecords) this.state.spendRecords = {};
     if (!this.state.timeline) this.state.timeline = [];
     if (!this.state.consumedPayments) this.state.consumedPayments = {};
+    if (!this.state.mandates) this.state.mandates = {};
     this.initialized = true;
   }
 
   private async persist(): Promise<void> {
-    await this.ctx.storage.put("state", this.state);
+    if (this.store) {
+      await this.store.save(this.state);
+    } else {
+      await this.ctx.storage.put("state", this.state);
+    }
   }
 
   private pushEvent(
@@ -83,24 +104,32 @@ export class CreditAgent extends DurableObject<Env> {
 
   // ─── Agent Registration ───
 
+  /**
+   * @param systemSeed Internal-only flag. When true, accepts scoring fields from input
+   *   to simulate prior protocol history (used by demo bootstrap). External callers
+   *   MUST NOT set this — the route handler does not pass it.
+   */
   async registerAgent(
     input: AgentRegistrationInput & { identityRegistered: boolean },
+    systemSeed = false,
   ): Promise<AgentRecord> {
     await this.init();
 
     const now = Date.now();
     const address = norm(input.address);
     const existing = this.state.agents[address];
+    // Scoring fields come from protocol-tracked state — NEVER from external user input.
+    // The systemSeed flag allows demo bootstrap to simulate prior history.
     const agent: AgentRecord = {
       address,
       name: input.name,
       url: input.url ?? existing?.url,
-      trustScore: input.trustScore ?? existing?.trustScore ?? 0,
-      attestationCount: input.attestationCount ?? existing?.attestationCount ?? 0,
-      cooperationSuccessCount: input.cooperationSuccessCount ?? existing?.cooperationSuccessCount ?? 0,
-      successfulJobs: input.successfulJobs ?? existing?.successfulJobs ?? 0,
-      failedJobs: input.failedJobs ?? existing?.failedJobs ?? 0,
-      averageCompletedPayout: input.averageCompletedPayout ?? existing?.averageCompletedPayout ?? 0,
+      trustScore: systemSeed ? (input.trustScore ?? 0) : (existing?.trustScore ?? 0),
+      attestationCount: systemSeed ? (input.attestationCount ?? 0) : (existing?.attestationCount ?? 0),
+      cooperationSuccessCount: systemSeed ? (input.cooperationSuccessCount ?? 0) : (existing?.cooperationSuccessCount ?? 0),
+      successfulJobs: systemSeed ? (input.successfulJobs ?? 0) : (existing?.successfulJobs ?? 0),
+      failedJobs: systemSeed ? (input.failedJobs ?? 0) : (existing?.failedJobs ?? 0),
+      averageCompletedPayout: systemSeed ? (input.averageCompletedPayout ?? 0) : (existing?.averageCompletedPayout ?? 0),
       identityRegistered: input.identityRegistered,
       repaidAdvances: existing?.repaidAdvances ?? 0,
       defaultedAdvances: existing?.defaultedAdvances ?? 0,
@@ -139,7 +168,7 @@ export class CreditAgent extends DurableObject<Env> {
     await this.init();
     const profile = this.getProfileInternal(input.agentAddress);
     const job = this.requireOpenJob(input.jobId, norm(input.agentAddress));
-    const quote = quoteAdvance(profile, job, rc(input.requestedAmount), input.purpose, this.state.treasury);
+    const quote = quoteAdvance(profile, job, rc(input.requestedAmount), input.purpose, this.state.treasury, this.getActiveJobExposure(job.id));
     this.pushEvent("quote_issued", norm(input.agentAddress), `Quote: ${quote.decision} for $${quote.approvedAmount.toFixed(2)}.`, {
       decision: quote.decision,
       approvedAmount: quote.approvedAmount,
@@ -521,7 +550,7 @@ export class CreditAgent extends DurableObject<Env> {
           payout: actualPayout,
           waterfall: waterfall.status,
           advances: activeAdvances.length,
-          source: "trustvault-credit",
+          source: "credmesh",
         });
         const txHash = await writeReputation(this.env, agent.address, score, evidence);
         if (txHash) {
@@ -543,10 +572,14 @@ export class CreditAgent extends DurableObject<Env> {
 
   // ─── Default ───
 
-  async defaultAdvance(input: { advanceId: string; reason: string }): Promise<CreditAdvance> {
+  async defaultAdvance(input: { advanceId: string; agentAddress?: string; reason: string }): Promise<CreditAdvance> {
     await this.init();
     const advance = this.requireAdvance(input.advanceId);
     if (advance.status !== "active") throw new Error("Advance is not active.");
+    // Ownership check: only the advance holder (or system/demo calls without agentAddress) can default
+    if (input.agentAddress && norm(input.agentAddress) !== norm(advance.agentAddress)) {
+      throw new Error("Only the advance holder can default their own advance.");
+    }
 
     advance.status = "defaulted";
     advance.defaultReason = input.reason;
@@ -584,7 +617,7 @@ export class CreditAgent extends DurableObject<Env> {
           advanceId: advance.id,
           amount: advance.approvedAmount,
           reason: input.reason,
-          source: "trustvault-credit",
+          source: "credmesh",
         });
         await writeReputation(this.env, agent.address, 0, evidence);
       }
@@ -622,6 +655,155 @@ export class CreditAgent extends DurableObject<Env> {
   async getTreasury(): Promise<TreasuryState> {
     await this.init();
     return this.state.treasury;
+  }
+
+  // ─── Mandates ───
+
+  async createMandate(input: {
+    funder: string;
+    budgetUsdc: number;
+    allowedCategories: string[];
+    maxPerTask: number;
+    maxDurationHours: number;
+    minCreditScore: number;
+    requiredReceivableType?: Mandate["requiredReceivableType"];
+    capitalOrigin?: Mandate["capitalOrigin"];
+  }): Promise<Mandate> {
+    await this.init();
+    const now = Date.now();
+    const mandate: Mandate = {
+      id: crypto.randomUUID(),
+      funder: norm(input.funder),
+      capitalOrigin: input.capitalOrigin ?? "direct",
+      budgetUsdc: rc(input.budgetUsdc),
+      allowedCategories: input.allowedCategories,
+      maxPerTask: rc(input.maxPerTask),
+      maxDurationHours: input.maxDurationHours,
+      minCreditScore: input.minCreditScore,
+      requiredReceivableType: input.requiredReceivableType ?? "any",
+      allocated: 0,
+      returned: 0,
+      feesEarned: 0,
+      advanceCount: 0,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    this.state.mandates[mandate.id] = mandate;
+    this.pushEvent("mandate_created", mandate.funder, `Mandate created: $${mandate.budgetUsdc.toFixed(2)} budget.`, {
+      mandateId: mandate.id, budget: mandate.budgetUsdc, categories: mandate.allowedCategories,
+    });
+    await this.persist();
+    return mandate;
+  }
+
+  async listMandates(filter?: { status?: string; funder?: string }): Promise<Mandate[]> {
+    await this.init();
+    let mandates = Object.values(this.state.mandates);
+    if (filter?.status) mandates = mandates.filter((m) => m.status === filter.status);
+    if (filter?.funder) {
+      const f = norm(filter.funder);
+      mandates = mandates.filter((m) => m.funder === f);
+    }
+    return mandates.sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  async getMandate(mandateId: string): Promise<Mandate | null> {
+    await this.init();
+    return this.state.mandates[mandateId] ?? null;
+  }
+
+  async updateMandateStatus(input: {
+    mandateId: string;
+    callerAddress: string;
+    status: "paused" | "active" | "closed";
+  }): Promise<Mandate> {
+    await this.init();
+    const mandate = this.state.mandates[input.mandateId];
+    if (!mandate) throw new Error(`Unknown mandate: ${input.mandateId}`);
+    if (norm(input.callerAddress) !== mandate.funder) {
+      throw new Error("Only the mandate funder can update status.");
+    }
+    if (mandate.status === "closed") throw new Error("Mandate is already closed.");
+    if (input.status === "active" && mandate.status !== "paused") {
+      throw new Error("Only paused mandates can be reactivated.");
+    }
+
+    mandate.status = input.status;
+    mandate.updatedAt = Date.now();
+
+    this.pushEvent("mandate_updated", mandate.funder, `Mandate ${input.status}: ${input.mandateId}.`, {
+      mandateId: mandate.id, status: input.status,
+    });
+    await this.persist();
+    return mandate;
+  }
+
+  /**
+   * Request an advance funded by a specific mandate.
+   * The mandate's policy is checked in addition to the normal credit underwriting.
+   */
+  async advanceFromMandate(input: {
+    mandateId: string;
+    agentAddress: string;
+    jobId: string;
+    requestedAmount: number;
+    purpose: string;
+  }): Promise<{ quote: CreditQuote; advance?: CreditAdvance; mandate: Mandate }> {
+    await this.init();
+    const mandate = this.state.mandates[input.mandateId];
+    if (!mandate) throw new Error(`Unknown mandate: ${input.mandateId}`);
+    if (mandate.status !== "active") throw new Error(`Mandate is ${mandate.status}.`);
+
+    // Check mandate policy
+    const agent = this.requireAgent(input.agentAddress);
+    const profile = computeCreditProfile(agent);
+    const job = this.requireOpenJob(input.jobId, norm(input.agentAddress));
+
+    if (profile.creditScore < mandate.minCreditScore) {
+      throw new Error(`Credit score ${profile.creditScore} below mandate minimum ${mandate.minCreditScore}.`);
+    }
+    if (!mandate.allowedCategories.includes(job.category) && !mandate.allowedCategories.includes("any")) {
+      throw new Error(`Job category "${job.category}" not allowed by mandate. Allowed: ${mandate.allowedCategories.join(", ")}.`);
+    }
+    if (job.durationHours > mandate.maxDurationHours) {
+      throw new Error(`Job duration ${job.durationHours}h exceeds mandate max ${mandate.maxDurationHours}h.`);
+    }
+
+    const mandateAvailable = rc(mandate.budgetUsdc - mandate.allocated);
+    const cappedAmount = rc(Math.min(input.requestedAmount, mandate.maxPerTask, mandateAvailable));
+
+    if (cappedAmount <= 0) {
+      throw new Error("Mandate budget exhausted.");
+    }
+
+    // Run normal underwriting with the capped amount
+    const result = await this.createAdvance({
+      agentAddress: input.agentAddress,
+      jobId: input.jobId,
+      requestedAmount: cappedAmount,
+      purpose: input.purpose,
+    });
+
+    // If advance was issued, update mandate accounting
+    if (result.advance) {
+      mandate.allocated = rc(mandate.allocated + result.advance.approvedAmount);
+      mandate.advanceCount += 1;
+      mandate.updatedAt = Date.now();
+
+      if (mandate.allocated >= mandate.budgetUsdc) {
+        mandate.status = "depleted";
+      }
+
+      this.pushEvent("mandate_advance", norm(input.agentAddress),
+        `Advance $${result.advance.approvedAmount.toFixed(2)} from mandate ${mandate.id.slice(0, 8)}...`, {
+        mandateId: mandate.id, advanceId: result.advance.id, amount: result.advance.approvedAmount,
+      });
+      await this.persist();
+    }
+
+    return { ...result, mandate };
   }
 
   // ─── Spend Controls ───
@@ -759,7 +941,7 @@ export class CreditAgent extends DurableObject<Env> {
       const jobIds: string[] = [];
 
       for (const a of data.agents) {
-        await this.registerAgent({ ...a, identityRegistered });
+        await this.registerAgent({ ...a, identityRegistered }, true /* systemSeed */);
         agentsCreated++;
       }
       for (const j of data.jobs) {
@@ -790,7 +972,7 @@ export class CreditAgent extends DurableObject<Env> {
 
     if (scenario === "failure" || scenario === "both") {
       const data = generateFailurePath();
-      const jobIds = await runScenario(data, false);
+      const jobIds = await runScenario(data, true);
 
       for (const pc of data.partialCompletions) {
         await this.completeJob({ jobId: jobIds[pc.jobIndex], actualPayout: pc.actualPayout, callerAddress: "system" });
@@ -858,6 +1040,14 @@ export class CreditAgent extends DurableObject<Env> {
 
   // ─── Internal helpers ───
 
+  private getActiveJobExposure(jobId: string): number {
+    return rc(
+      Object.values(this.state.advances)
+        .filter((a) => a.jobId === jobId && a.status === "active")
+        .reduce((s, a) => s + a.approvedAmount, 0),
+    );
+  }
+
   private getProfileInternal(address: string): CreditProfile {
     return computeCreditProfile(this.requireAgent(address));
   }
@@ -870,7 +1060,7 @@ export class CreditAgent extends DurableObject<Env> {
   }): CreditQuote {
     const profile = this.getProfileInternal(input.agentAddress);
     const job = this.requireOpenJob(input.jobId, norm(input.agentAddress));
-    return quoteAdvance(profile, job, rc(input.requestedAmount), input.purpose, this.state.treasury);
+    return quoteAdvance(profile, job, rc(input.requestedAmount), input.purpose, this.state.treasury, this.getActiveJobExposure(job.id));
   }
 
   private requireAgent(address: string): AgentRecord {

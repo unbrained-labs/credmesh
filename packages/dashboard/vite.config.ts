@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'https://trustvault-credit.leaidedev.workers.dev',
+        target: 'https://credmesh.leaidedev.workers.dev',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },

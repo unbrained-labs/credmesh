@@ -46,6 +46,7 @@ export function quoteAdvance(
   requestedAmount: number,
   purpose: string,
   treasury: TreasuryState,
+  existingJobAdvances = 0,
 ): CreditQuote {
   const reasons = [...profile.reasons];
   const constraints = [
@@ -58,7 +59,11 @@ export function quoteAdvance(
     constraints.push("Use restricted to approved tool and compute vendors.");
   }
 
-  const payoutCap = rc(job.expectedPayout * PAYOUT_ADVANCE_RATIO);
+  const grossPayoutCap = rc(job.expectedPayout * PAYOUT_ADVANCE_RATIO);
+  const payoutCap = rc(Math.max(0, grossPayoutCap - existingJobAdvances));
+  if (existingJobAdvances > 0) {
+    reasons.push(`Existing advances of $${existingJobAdvances.toFixed(2)} on this job reduce available cap.`);
+  }
   const approvedAmount = rc(Math.min(requestedAmount, payoutCap, profile.availableCredit, HARD_CAP));
   const utilizationRatio = job.expectedPayout <= 0 ? 1 : approvedAmount / job.expectedPayout;
 

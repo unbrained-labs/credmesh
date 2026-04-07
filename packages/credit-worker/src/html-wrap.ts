@@ -31,7 +31,7 @@ export function respond(c: Context, data: unknown, opts: RespondOptions) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${opts.title} — TrustVault Credit</title>
+  <title>${opts.title} — CredMesh</title>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -74,7 +74,7 @@ export function respond(c: Context, data: unknown, opts: RespondOptions) {
     <pre class="raw">${escapeHtml(json)}</pre>
     <div class="nav">
       <a href="/" class="btn-back">&larr; Landing</a>
-      <a href="https://trustvault-dashboard.pages.dev" class="btn-back">Dashboard</a>
+      <a href="https://credmesh-dashboard.pages.dev" class="btn-back">Dashboard</a>
       <a href="/.well-known/agent.json" class="btn-back">Agent Card</a>
     </div>
   </div>

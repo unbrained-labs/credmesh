@@ -1,5 +1,5 @@
 {
-  "name": "trustvault-credit",
+  "name": "credmesh",
   "version": "0.1.0",
   "private": true,
   "description": "Programmable working capital for autonomous agents",
@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "cd packages/credit-worker && npm run dev",
     "deploy": "cd packages/credit-worker && npm run deploy",
-    "typecheck": "tsc --noEmit -p packages/credit-worker/tsconfig.json"
+    "typecheck": "tsc --noEmit -p packages/credit-worker/tsconfig.json",
+    "test:e2e": "tsx packages/credit-worker/test/e2e.ts"
   },
   "devDependencies": {
     "solc": "^0.8.24",
