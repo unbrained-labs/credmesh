@@ -14,6 +14,7 @@ WORKDIR /app
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/packages/credit-worker packages/credit-worker
 COPY package*.json ./
+RUN npm install tsx
 
 RUN mkdir -p /app/data
 VOLUME /app/data
