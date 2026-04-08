@@ -25,7 +25,7 @@ export { CreditAgent };
 const app = new Hono<{ Bindings: Env; Variables: { verifiedAddress: string } }>();
 
 app.use("*", cors({
-  origin: ["https://credmesh-dashboard.pages.dev", "https://credit.unbrained.club"],
+  origin: ["https://credmesh-dashboard.pages.dev", "https://credmesh.xyz"],
   allowMethods: ["GET", "POST", "OPTIONS"],
   allowHeaders: ["Content-Type", "X-Agent-Address", "X-Agent-Signature", "X-Agent-Timestamp", "X-Admin-Secret", "Accept"],
 }));
@@ -149,8 +149,8 @@ app.get("/use-cases", (c) => {
         step4: "Receive cmCREDIT shares — share price increases as fees accumulate",
         step5: "Withdraw idle capital from the same panel (deployed capital unlocks as advances repay)",
       },
-      faucet: "Need testnet tUSDC? POST https://credit.unbrained.club/faucet/0xYourAddress",
-      currentVault: "Live stats: https://credit.unbrained.club/health",
+      faucet: "Need testnet tUSDC? POST https://credmesh.xyz/faucet/0xYourAddress",
+      currentVault: "Live stats: https://credmesh.xyz/health",
     },
   });
 });

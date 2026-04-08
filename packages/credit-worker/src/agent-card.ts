@@ -6,7 +6,7 @@ import type { Env } from "./types";
  * with additional CredMesh-specific fields.
  */
 export function agentCard(env: Env) {
-  const base = "https://credit.unbrained.club";
+  const base = "https://credmesh.xyz";
   return {
     // ── A2A Standard Fields ──
     name: env.AGENT_NAME || "CredMesh",

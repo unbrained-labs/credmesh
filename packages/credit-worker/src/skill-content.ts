@@ -32,7 +32,7 @@ For agents that want **on-chain enforcement with zero operator trust**:
 ## Base URL
 
 \`\`\`
-https://credit.unbrained.club
+https://credmesh.xyz
 \`\`\`
 
 ## MCP Server

@@ -12,7 +12,7 @@ export function landingHTML(): string {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CredMesh — Programmable Working Capital for Autonomous Agents</title>
   <meta name="description" content="Non-custodial credit infrastructure for AI agents. Advance working capital against verified on-chain receivables. No operator approval needed.">
-  <link rel="agent" href="https://credit.unbrained.club/.well-known/agent.json">
+  <link rel="agent" href="https://credmesh.xyz/.well-known/agent.json">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23050505'/><rect x='4' y='4' width='8' height='8' fill='%2300ff41'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
@@ -114,8 +114,8 @@ export function landingHTML(): string {
         <span class="logo-text">TRUSTVAULT CREDIT</span>
       </div>
       <div class="nav">
-        <a href="https://credit.unbrained.club/.well-known/agent.json">[agent.json]</a>
-        <a href="https://credit.unbrained.club/fees">[fees]</a>
+        <a href="https://credmesh.xyz/.well-known/agent.json">[agent.json]</a>
+        <a href="https://credmesh.xyz/fees">[fees]</a>
         <a href="https://github.com/unbrained-labs/credmesh">[github]</a>
         <a href="https://credmesh-dashboard.pages.dev">[dashboard]</a>
         <div class="badge"><div class="dot"></div><span>LIVE</span></div>
@@ -201,8 +201,8 @@ export function landingHTML(): string {
       </div>
     </div>
     <div class="code"><span class="comment">// Agent integration — 3 lines</span>
-<span class="keyword">const</span> profile = <span class="keyword">await</span> fetch(<span class="string">"https://credit.unbrained.club/credit/profile"</span>, { method: <span class="string">"POST"</span>, body: JSON.stringify({ agentAddress }) });
-<span class="keyword">const</span> advance = <span class="keyword">await</span> fetch(<span class="string">"https://credit.unbrained.club/credit/advance"</span>, { method: <span class="string">"POST"</span>, body: JSON.stringify({ agentAddress, jobId, requestedAmount: 20, purpose: <span class="string">"compute"</span> }) });
+<span class="keyword">const</span> profile = <span class="keyword">await</span> fetch(<span class="string">"https://credmesh.xyz/credit/profile"</span>, { method: <span class="string">"POST"</span>, body: JSON.stringify({ agentAddress }) });
+<span class="keyword">const</span> advance = <span class="keyword">await</span> fetch(<span class="string">"https://credmesh.xyz/credit/advance"</span>, { method: <span class="string">"POST"</span>, body: JSON.stringify({ agentAddress, jobId, requestedAmount: 20, purpose: <span class="string">"compute"</span> }) });
 <span class="comment">// Agent receives USDC. Repayment is automatic via waterfall.</span></div>
   </section>
 
@@ -218,7 +218,7 @@ export function landingHTML(): string {
       <a href="https://credmesh-dashboard.pages.dev#deposit" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;font-size:13px;padding:14px 32px;">
         Connect Wallet &amp; Deposit
       </a>
-      <a href="https://credit.unbrained.club/vault/opportunity" class="btn btn-secondary">
+      <a href="https://credmesh.xyz/vault/opportunity" class="btn btn-secondary">
         Check Live Yield
       </a>
     </div>
@@ -246,7 +246,7 @@ export function landingHTML(): string {
     </div>
     <p style="font-size:11px;color:#666;margin-top:16px;">
       Idle capital is withdrawable instantly. Deployed capital (in active advances) unlocks as agents repay.
-      <a href="https://credit.unbrained.club/vault/opportunity">Check live yield opportunity →</a>
+      <a href="https://credmesh.xyz/vault/opportunity">Check live yield opportunity →</a>
     </p>
   </section>
 
@@ -348,11 +348,11 @@ GET /fees                      <span class="comment"># Current fee model + examp
   <div class="container">
     <div class="inner">
       <div class="links">
-        <a href="https://credit.unbrained.club/.well-known/agent.json">Agent Card</a>
+        <a href="https://credmesh.xyz/.well-known/agent.json">Agent Card</a>
         <a href="https://credmesh-dashboard.pages.dev">Dashboard</a>
         <a href="https://github.com/unbrained-labs/credmesh">GitHub</a>
         <a href="https://github.com/unbrained-labs/credmesh/blob/main/SKILL.md">SKILL.md</a>
-        <a href="https://credit.unbrained.club/fees">Fee Model</a>
+        <a href="https://credmesh.xyz/fees">Fee Model</a>
       </div>
       <div class="copy">unbrained.club — 2026</div>
     </div>
