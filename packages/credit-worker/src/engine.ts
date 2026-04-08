@@ -1,4 +1,12 @@
-import { DurableObject } from "cloudflare:workers";
+// Use CF DurableObject when available, shim otherwise (standalone mode)
+import { DurableObject as DurableObjectShim } from "./cf-shim";
+let DurableObjectBase: typeof DurableObjectShim = DurableObjectShim;
+try {
+  // @ts-expect-error — cloudflare:workers only exists on CF runtime
+  const cf = require("cloudflare:workers");
+  DurableObjectBase = cf.DurableObject;
+} catch { /* standalone mode — use shim */ }
+const DurableObject = DurableObjectBase;
 import { computeCreditProfile, quoteAdvance } from "./credit";
 import type { StateStore } from "./store";
 import { createEvent, computePortfolio, computeRisk, generateHappyPath, generateFailurePath } from "./demo";
