@@ -15,6 +15,7 @@ import { getPaymentMethods } from "./payments";
 import { mppGate, isMppEnabled } from "./mpp";
 import { getActiveChains, getChainConfig, getChainClients, explorerUrl } from "./chains";
 import { respond } from "./html-wrap";
+import { landingHTML } from "./landing";
 import { SKILL_MD } from "./skill-content";
 import { errMsg } from "./utils";
 import { pad } from "viem";
@@ -52,18 +53,31 @@ const adminGuard = createMiddleware<{ Bindings: Env }>(async (c, next) => {
 });
 
 // ─── Static dashboard assets ───
+// Vite emits absolute /assets/* paths, so these live at the root regardless of
+// where the dashboard HTML itself is served.
 app.use("/assets/*", serveStatic({ root: "./packages/dashboard/dist" }));
+app.get("/favicon.svg", serveStatic({ root: "./packages/dashboard/dist", path: "favicon.svg" }));
 
 const dashboardIndex = serveStatic({ root: "./packages/dashboard/dist", path: "index.html" });
 
 // ─── Root ───
 // Agents (Accept: application/json) get the agent card.
-// Browsers get the React dashboard's index.html.
-app.get("/", async (c) => {
+// Browsers get the marketing landing page.
+app.get("/", (c) => {
   const accept = c.req.header("accept") ?? "";
   if (accept.includes("application/json") && !accept.includes("text/html")) {
     return c.json(agentCard(c.env));
   }
+  c.header("Content-Type", "text/html; charset=utf-8");
+  return c.body(landingHTML());
+});
+
+// ─── Dashboard (React app) ───
+app.get("/app", async (c) => {
+  const res = await dashboardIndex(c, async () => {});
+  return res instanceof Response ? res : c.notFound();
+});
+app.get("/app/", async (c) => {
   const res = await dashboardIndex(c, async () => {});
   return res instanceof Response ? res : c.notFound();
 });
