@@ -69,9 +69,9 @@ TrustVault Credit
 
 Current implementation:
 
-- **Runtime:** Cloudflare Workers + Durable Objects
+- **Runtime:** Node.js (Hono on `@hono/node-server`)
 - **Framework:** Hono
-- **State:** durable agent profiles, jobs, and advances
+- **State:** SQLite (single-file KV store)
 - **Identity input:** optional ERC-8004 registration check
 
 ## Credit Lifecycle API
@@ -204,7 +204,7 @@ Future integration path:
 
 ## Current Repo Layout
 
-- `packages/credit-worker`: Cloudflare Worker + Durable Object MVP
+- `packages/credit-worker`: Hono + SQLite backend (runs on Node.js / Coolify / Hetzner)
 - `docs/agent-credit-prd.md`: product requirements
 - `docs/full-beast-roadmap.md`: prioritized roadmap to turn this into a full platform
 

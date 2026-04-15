@@ -6,10 +6,8 @@
  *   - save(state): write the full state JSON
  *
  * Implementations:
- *   - DurableObjectStore: Cloudflare Workers (current)
- *   - SqliteStore: Fly.io, VPS, any Node.js host
- *   - DenoKvStore: Deno Deploy
- *   - MemoryStore: Testing
+ *   - SqliteStore: production (Node.js + better-sqlite3)
+ *   - MemoryStore: testing
  */
 
 import type { AgentState } from "./types";
@@ -17,22 +15,6 @@ import type { AgentState } from "./types";
 export interface StateStore {
   load(): Promise<AgentState | null>;
   save(state: AgentState): Promise<void>;
-}
-
-/**
- * Cloudflare Durable Object storage adapter.
- * Used when running on CF Workers.
- */
-export class DurableObjectStore implements StateStore {
-  constructor(private storage: DurableObjectStorage) {}
-
-  async load(): Promise<AgentState | null> {
-    return (await this.storage.get<AgentState>("state")) ?? null;
-  }
-
-  async save(state: AgentState): Promise<void> {
-    await this.storage.put("state", state);
-  }
 }
 
 /**
@@ -51,7 +33,7 @@ export class MemoryStore implements StateStore {
 }
 
 /**
- * SQLite store for Node.js hosts (Fly.io, Railway, VPS).
+ * SQLite store for Node.js hosts.
  * Requires `better-sqlite3` package.
  *
  * Usage:

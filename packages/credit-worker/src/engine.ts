@@ -1,12 +1,3 @@
-// Use CF DurableObject when available, shim otherwise (standalone mode)
-import { DurableObject as DurableObjectShim } from "./cf-shim";
-let DurableObjectBase: typeof DurableObjectShim = DurableObjectShim;
-try {
-  // @ts-expect-error — cloudflare:workers only exists on CF runtime
-  const cf = require("cloudflare:workers");
-  DurableObjectBase = cf.DurableObject;
-} catch { /* standalone mode — use shim */ }
-const DurableObject = DurableObjectBase;
 import { computeCreditProfile, quoteAdvance } from "./credit";
 import type { StateStore } from "./store";
 import { createEvent, computePortfolio, computeRisk, generateHappyPath, generateFailurePath } from "./demo";
@@ -57,26 +48,20 @@ const DEFAULT_STATE: AgentState = {
   consumedPayments: {},
 };
 
-export class CreditAgent extends DurableObject<Env> {
+export class CreditAgent {
+  protected env: Env;
+  private store: StateStore;
   private state!: AgentState;
   private initialized = false;
-  private store?: StateStore;
 
-  /** Create a standalone instance (non-CF) with a pluggable StateStore */
-  static createStandalone(env: Env, store: StateStore): CreditAgent {
-    // Create instance without DO constructor (for non-CF runtimes)
-    const agent = Object.create(CreditAgent.prototype) as CreditAgent;
-    agent.env = env;
-    agent.store = store;
-    agent.initialized = false;
-    return agent;
+  constructor(env: Env, store: StateStore) {
+    this.env = env;
+    this.store = store;
   }
 
   private async init(): Promise<void> {
     if (this.initialized) return;
-    const stored = this.store
-      ? await this.store.load()
-      : await this.ctx.storage.get<AgentState>("state");
+    const stored = await this.store.load();
     this.state = stored ?? structuredClone(DEFAULT_STATE);
     if (!this.state.bids) this.state.bids = {};
     if (!this.state.treasury) this.state.treasury = { ...DEFAULT_TREASURY };
@@ -91,11 +76,7 @@ export class CreditAgent extends DurableObject<Env> {
   }
 
   private async persist(): Promise<void> {
-    if (this.store) {
-      await this.store.save(this.state);
-    } else {
-      await this.ctx.storage.put("state", this.state);
-    }
+    await this.store.save(this.state);
   }
 
   private pushEvent(

@@ -1,5 +1,4 @@
 export interface Env {
-  CREDIT_AGENT: DurableObjectNamespace;
   AGENT_NAME: string;
   CHAIN_RPC_URL?: string;
   IDENTITY_REGISTRY?: string;

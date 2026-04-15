@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card } from './Card';
 import { connectWallet, depositToVault, withdrawFromVault, disconnectWallet, type WalletState } from '../lib/wallet';
 import type { HealthResponse } from '../api';
+import { API_BASE } from '../lib/config';
 
 export function DepositFlow({ vault }: { vault: HealthResponse['vault'] | null }) {
   const [wallet, setWallet] = useState<WalletState>({ connected: false, address: null, chainId: null, tokenBalance: null, vaultShares: null, shareValue: null });
@@ -13,8 +14,7 @@ export function DepositFlow({ vault }: { vault: HealthResponse['vault'] | null }
 
   // Auto-fetch vault address from API
   useEffect(() => {
-    const BASE = import.meta.env.PROD ? 'https://credit.unbrained.club' : '/api';
-    fetch(`${BASE}/vault/opportunity`)
+    fetch(`${API_BASE}/vault/opportunity`)
       .then(r => r.json())
       .then(d => {
         const addr = d?.howToDeposit?.vaultContract;

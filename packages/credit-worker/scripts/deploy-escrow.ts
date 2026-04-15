@@ -130,8 +130,8 @@ async function main() {
 
   console.log(`\n=== DONE ===`);
   console.log(`Escrow: ${escrowAddress}`);
-  console.log(`\nSet secret:`);
-  console.log(`  echo "${escrowAddress}" | npx wrangler secret put CREDIT_ESCROW --name credmesh`);
+  console.log(`\nSet env var on your server (Coolify / Hetzner):`);
+  console.log(`  CREDIT_ESCROW=${escrowAddress}`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

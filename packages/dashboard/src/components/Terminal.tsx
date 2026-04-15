@@ -28,7 +28,7 @@ const DEMO_CLIENT = '0xcccccccccccccccccccccccccccccccccccccccc';
 export function Terminal({ onMutation }: { onMutation: () => void }) {
   const [input, setInput] = useState('');
   const [log, setLog] = useState<LogEntry[]>([
-    { id: '0', type: 'info', text: 'TrustVault Credit Terminal v0.6.0 — type "help" for commands' },
+    { id: '0', type: 'info', text: 'CredMesh Terminal v0.6.0 — type "help" for commands' },
     { id: '1', type: 'info', text: 'All commands hit the live API. Try: demo → then check the dashboard panels.' },
     { id: '2', type: 'info', text: 'Agent endpoints require wallet signature auth (EIP-191). Use demo/reset for quick testing.' },
   ]);

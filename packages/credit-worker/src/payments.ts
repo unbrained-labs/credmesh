@@ -7,8 +7,7 @@
  * 3. x402 (Coinbase) — gasless USDC via HTTP 402 (Base only)
  *
  * MPP is the primary rail. It supports both crypto (USDC on Tempo) and
- * fiat (cards/wallets via Stripe SPTs), has Hono middleware, and works
- * on Cloudflare Workers.
+ * fiat (cards/wallets via Stripe SPTs) and has Hono middleware.
  */
 
 /**
@@ -78,7 +77,7 @@ export function getPaymentMethods(env: {
       docs: "https://mpp.dev/sdk/typescript",
     },
     lpIntegration: {
-      dashboard: "https://credmesh-dashboard.pages.dev (connect wallet, deposit)",
+      dashboard: "https://credmesh.xyz (connect wallet, deposit)",
       api: "GET /vault/opportunity (assess yield, risk, deposit instructions)",
       vault: env.CREDIT_VAULT ?? "not configured",
     },

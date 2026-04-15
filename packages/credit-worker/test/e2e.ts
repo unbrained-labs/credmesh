@@ -1,7 +1,7 @@
 /**
  * CredMesh — End-to-End Test Suite
  *
- * Hits the live testnet deployment at credit.unbrained.club.
+ * Hits the live deployment at credmesh.xyz.
  * Uses real EIP-191 wallet signatures for authenticated endpoints.
  *
  * Run: npm run test:e2e  (from repo root)
@@ -19,7 +19,7 @@ import { baseSepolia } from "viem/chains";
 
 // ─── Configuration ───
 
-const BASE_URL = process.env.TRUSTVAULT_URL ?? "https://credit.unbrained.club";
+const BASE_URL = process.env.CREDMESH_URL ?? process.env.TRUSTVAULT_URL ?? "https://credmesh.xyz";
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET ?? "test-admin-secret";
 

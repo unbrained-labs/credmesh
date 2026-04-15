@@ -3,19 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.13",
     "@x402/hono": "^2.7.0",
+    "better-sqlite3": "^12.8.0",
     "hono": "^4.7.0",
     "mppx": "^0.4.8"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250313.0",
-    "typescript": "^5.7.0",
-    "wrangler": "^4.14.0"
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0"
   }
 }
-

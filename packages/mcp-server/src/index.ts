@@ -9,14 +9,14 @@
  * Or:  node dist/index.js
  *
  * Environment:
- *   TRUSTVAULT_URL — base URL (default: https://credit.unbrained.club)
+ *   CREDMESH_URL — base URL (default: https://credmesh.xyz)
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-const BASE_URL = process.env.TRUSTVAULT_URL ?? "https://credit.unbrained.club";
+const BASE_URL = process.env.CREDMESH_URL ?? process.env.TRUSTVAULT_URL ?? "https://credmesh.xyz";
 
 // ─── HTTP Client ───
 
@@ -339,7 +339,7 @@ server.resource(
   { description: "Complete API reference and integration guide for CredMesh", mimeType: "text/markdown" },
   async () => {
     const res = await fetch(`${BASE_URL}/skill.md`);
-    const text = res.ok ? await res.text() : "Skill guide not available. See https://credit.unbrained.club/bootstrap";
+    const text = res.ok ? await res.text() : "Skill guide not available. See https://credmesh.xyz/bootstrap";
     return { contents: [{ uri: "credmesh://skill.md", text, mimeType: "text/markdown" }] };
   },
 );

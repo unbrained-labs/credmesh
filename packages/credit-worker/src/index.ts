@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createMiddleware } from "hono/factory";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { agentCard } from "./agent-card";
-import { CreditAgent } from "./engine";
+import type { CreditAgent } from "./engine";
 import { listScenarios } from "./demo";
 import { checkIdentityRegistration } from "./erc8004";
 import { isChainEnabled, isEscrowEnabled, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens, getVaultPosition, verifyPayment, isTrustlessEnabled, getTrustlessConfig, getTrustlessParams, getOnchainCredit, buildAdvanceCalldata, verifyTrustlessAdvance, registerReceivable } from "./chain";
@@ -12,7 +13,6 @@ import { positiveNumber, boundedString, ethAddress } from "./validate";
 import { getX402Config } from "./x402";
 import { getPaymentMethods } from "./payments";
 import { mppGate, isMppEnabled } from "./mpp";
-import { landingHTML } from "./landing";
 import { getActiveChains, getChainConfig, getChainClients, explorerUrl } from "./chains";
 import { respond } from "./html-wrap";
 import { SKILL_MD } from "./skill-content";
@@ -20,12 +20,16 @@ import { errMsg } from "./utils";
 import { pad } from "viem";
 import type { AgentRegistrationInput, Env, PortfolioReport, RiskReport, SpendCategory, TimelineEvent, TreasuryState } from "./types";
 
-export { CreditAgent };
+let agentInstance: CreditAgent | null = null;
+
+export function setAgent(agent: CreditAgent): void {
+  agentInstance = agent;
+}
 
 const app = new Hono<{ Bindings: Env; Variables: { verifiedAddress: string } }>();
 
 app.use("*", cors({
-  origin: ["https://credmesh-dashboard.pages.dev", "https://credmesh.xyz"],
+  origin: (origin) => origin,
   allowMethods: ["GET", "POST", "OPTIONS"],
   allowHeaders: ["Content-Type", "X-Agent-Address", "X-Agent-Signature", "X-Agent-Timestamp", "X-Admin-Secret", "Accept"],
 }));
@@ -47,18 +51,21 @@ const adminGuard = createMiddleware<{ Bindings: Env }>(async (c, next) => {
   await next();
 });
 
-// ─── Root (Landing Page) ───
+// ─── Static dashboard assets ───
+app.use("/assets/*", serveStatic({ root: "./packages/dashboard/dist" }));
 
-app.get("/", (c) => {
+const dashboardIndex = serveStatic({ root: "./packages/dashboard/dist", path: "index.html" });
+
+// ─── Root ───
+// Agents (Accept: application/json) get the agent card.
+// Browsers get the React dashboard's index.html.
+app.get("/", async (c) => {
   const accept = c.req.header("accept") ?? "";
-  // Agents requesting JSON get the agent card
   if (accept.includes("application/json") && !accept.includes("text/html")) {
     return c.json(agentCard(c.env));
   }
-  // Browsers get the landing page
-  c.header("Content-Type", "text/html; charset=utf-8");
-  c.header("Cache-Control", "public, max-age=3600");
-  return c.body(landingHTML());
+  const res = await dashboardIndex(c, async () => {});
+  return res instanceof Response ? res : c.notFound();
 });
 
 // ─── Discovery ───
@@ -143,7 +150,7 @@ app.get("/use-cases", (c) => {
         risk: "Default risk. Mitigated by: receivable-backed advances (30% max of job payout), credit scoring, reputation history, and the pool loss surcharge that rebuilds reserves.",
       },
       howToDeposit: {
-        step1: "Go to https://credmesh-dashboard.pages.dev",
+        step1: "Go to https://credmesh.xyz",
         step2: "Click 'Connect Wallet' in the Vault panel",
         step3: "Enter amount → Deposit (wallet handles approve + deposit in one flow)",
         step4: "Receive cmCREDIT shares — share price increases as fees accumulate",
@@ -274,7 +281,7 @@ app.get("/vault/opportunity", async (c) => {
   return respond(c, data, {
     title: "Vault Yield Opportunity",
     description: "Live yield data for CredMesh liquidity providers. Deposit USDC, earn fees from agent credit advances.",
-    cta: { label: "Connect Wallet & Deposit", href: "https://credmesh-dashboard.pages.dev#deposit" },
+    cta: { label: "Connect Wallet & Deposit", href: "https://credmesh.xyz#deposit" },
   });
 });
 
@@ -571,7 +578,7 @@ app.post("/marketplace/jobs/:jobId/pay-mpp", async (c, next) => {
   const jobId = c.req.param("jobId");
   const agent = getAgent(c.env);
   const snapshot = await agent.getSnapshot();
-  const jobs = (snapshot as Record<string, unknown>).jobs as Record<string, { expectedPayout: number; status: string }> | undefined;
+  const jobs = (snapshot as unknown as Record<string, unknown>).jobs as Record<string, { expectedPayout: number; status: string }> | undefined;
   const job = jobs?.[jobId];
   if (!job) return c.json({ error: `Unknown job: ${jobId}` }, 404);
   if (job.status !== "open") return c.json({ error: "Job is not open." }, 400);
@@ -1176,9 +1183,11 @@ app.onError((error, c) => {
   return c.json({ error: safe }, 400);
 });
 
-function getAgent(env: Env): DurableObjectStub<CreditAgent> {
-  const id = env.CREDIT_AGENT.idFromName("credmesh-singleton");
-  return env.CREDIT_AGENT.get(id) as DurableObjectStub<CreditAgent>;
+function getAgent(_env?: Env): CreditAgent {
+  if (!agentInstance) {
+    throw new Error("CreditAgent not initialized — server.ts must call setAgent() before handling requests");
+  }
+  return agentInstance;
 }
 
 function devSpotManifest() {
@@ -1214,15 +1223,15 @@ function devSpotManifest() {
       vault: "ERC-4626",
     },
     compute_constraints: {
-      runtime: "cloudflare-workers",
-      storage: "durable-objects",
+      runtime: "node.js",
+      storage: "sqlite",
       max_request_duration_ms: 30000,
     },
     endpoints: {
       health: "/health",
       agent_card: "/.well-known/agent.json",
       agent_log: "/agent_log.json",
-      dashboard: "https://credmesh-dashboard.pages.dev",
+      dashboard: "https://credmesh.xyz",
     },
     version: "0.2.0",
   };
@@ -1276,9 +1285,9 @@ const COVER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630
   <!-- Right side stats -->
   <text x="820" y="365" font-family="monospace" font-size="9" fill="#666" letter-spacing="2">STACK</text>
   <text x="820" y="395" font-family="monospace" font-size="13" fill="#666">runtime</text>
-  <text x="1000" y="395" font-family="monospace" font-size="13" fill="#e0e0e0">cloudflare workers</text>
+  <text x="1000" y="395" font-family="monospace" font-size="13" fill="#e0e0e0">node.js (hetzner)</text>
   <text x="820" y="418" font-family="monospace" font-size="13" fill="#666">state</text>
-  <text x="1000" y="418" font-family="monospace" font-size="13" fill="#e0e0e0">durable objects</text>
+  <text x="1000" y="418" font-family="monospace" font-size="13" fill="#e0e0e0">sqlite</text>
   <text x="820" y="441" font-family="monospace" font-size="13" fill="#666">chain</text>
   <text x="1000" y="441" font-family="monospace" font-size="13" fill="#e0e0e0">sepolia (ERC-8004)</text>
   <text x="820" y="464" font-family="monospace" font-size="13" fill="#666">router</text>
@@ -1287,8 +1296,8 @@ const COVER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630
   <text x="1000" y="487" font-family="monospace" font-size="13" fill="#e0e0e0">typescript</text>
 
   <!-- Footer -->
-  <text x="80" y="555" font-family="monospace" font-size="10" fill="#ff1744" font-weight="bold">unbrained.club</text>
-  <text x="1000" y="555" font-family="monospace" font-size="10" fill="#666">synthesis 2026</text>
+  <text x="80" y="555" font-family="monospace" font-size="10" fill="#ff1744" font-weight="bold">credmesh.xyz</text>
+  <text x="1000" y="555" font-family="monospace" font-size="10" fill="#666">unbrained labs</text>
 </svg>`;
 
 export default app;

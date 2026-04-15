@@ -1,10 +1,10 @@
 /**
- * Standalone server entry point (non-Cloudflare).
+ * Standalone server entry point.
  *
- * Runs the CredMesh Hono app with SQLite persistence instead of Durable Objects.
- * Used for: Coolify, Fly.io, Railway, Docker, any Node.js host.
+ * Runs the CredMesh Hono app with SQLite persistence on Node.js.
+ * Used for: Hetzner, Coolify, Fly.io, Railway, Docker, any Node.js host.
  *
- * Environment variables (same as wrangler.toml [vars] + secrets):
+ * Environment variables:
  *   PORT              — HTTP port (default: 3000)
  *   DATA_DIR          — SQLite database directory (default: ./data)
  *   AGENT_NAME        — Display name (default: CredMesh)
@@ -14,8 +14,6 @@
  */
 
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { SqliteStore } from "./store";
 import { CreditAgent } from "./engine";
 import type { Env } from "./types";
@@ -26,9 +24,7 @@ import { join } from "path";
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const DATA_DIR = process.env.DATA_DIR ?? "./data";
 
-// Build Env from process.env (same shape as CF bindings)
 const env: Env = {
-  CREDIT_AGENT: null as never, // Not used in standalone mode
   AGENT_NAME: process.env.AGENT_NAME ?? "CredMesh",
   CHAIN_RPC_URL: process.env.CHAIN_RPC_URL,
   IDENTITY_REGISTRY: process.env.IDENTITY_REGISTRY,
@@ -62,68 +58,25 @@ const env: Env = {
   ADMIN_SECRET: process.env.ADMIN_SECRET,
 };
 
-// ─── Initialize SQLite store + engine ───
-
-let store: SqliteStore;
-let agent: CreditAgent;
-
-async function initStore() {
-  // Dynamic import for better-sqlite3 (not available at compile time)
-  const Database = (await import("better-sqlite3")).default;
-  const dbPath = join(DATA_DIR, "credmesh.db");
-  const db = new Database(dbPath);
-  db.pragma("journal_mode = WAL"); // Better concurrent read performance
-  store = new SqliteStore(db);
-  agent = CreditAgent.createStandalone(env, store);
-  console.log(`SQLite store initialized at ${dbPath}`);
-}
-
-// ─── Monkey-patch the Hono app to use standalone agent ───
-// The existing index.ts exports a Hono app that calls getAgent(env)
-// which creates a DO stub. We need to intercept that.
-// Simplest approach: re-export the app but override the getAgent binding.
-
-// Import the app (it's the default export from index.ts)
-// We can't easily re-use it because getAgent is internal.
-// Instead, we'll serve the app as-is but inject the env with a special
-// CREDIT_AGENT namespace that returns our standalone agent.
-
-// Create a proxy that mimics the DurableObjectNamespace interface
-const agentProxy = {
-  idFromName: () => "standalone",
-  get: () => {
-    // Return a proxy that forwards all method calls to our standalone agent
-    return new Proxy(agent, {
-      get(target, prop) {
-        const val = (target as Record<string | symbol, unknown>)[prop];
-        if (typeof val === "function") {
-          return val.bind(target);
-        }
-        return val;
-      },
-    });
-  },
-};
-
 // ─── Start server ───
 
 async function main() {
   const { mkdirSync } = await import("fs");
   mkdirSync(DATA_DIR, { recursive: true });
 
-  await initStore();
+  const Database = (await import("better-sqlite3")).default;
+  const dbPath = join(DATA_DIR, "credmesh.db");
+  const db = new Database(dbPath);
+  db.pragma("journal_mode = WAL");
+  const store = new SqliteStore(db);
+  console.log(`SQLite store initialized at ${dbPath}`);
 
-  // Inject the agent proxy into env
-  (env as Record<string, unknown>).CREDIT_AGENT = agentProxy;
+  const agent = new CreditAgent(env, store);
 
-  // Import the Hono app
-  const { default: app } = await import("./index");
+  const { default: app, setAgent } = await import("./index");
+  setAgent(agent);
 
-  // Wrap to inject env bindings on every request (Hono on Node.js
-  // doesn't have CF's env injection, so we do it manually)
-  const wrappedFetch = (req: Request) => {
-    return app.fetch(req, env);
-  };
+  const wrappedFetch = (req: Request) => app.fetch(req, env);
 
   serve({ fetch: wrappedFetch, port: PORT }, (info) => {
     console.log(`CredMesh API running on http://localhost:${info.port}`);

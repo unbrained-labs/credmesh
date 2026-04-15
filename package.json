@@ -7,16 +7,15 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "cd packages/credit-worker && npm run dev",
-    "deploy": "cd packages/credit-worker && npm run deploy",
+    "dev": "npm run dev --workspace=packages/credit-worker",
+    "start": "npm run start --workspace=packages/credit-worker",
     "typecheck": "tsc --noEmit -p packages/credit-worker/tsconfig.json",
     "test:e2e": "tsx packages/credit-worker/test/e2e.ts"
   },
   "devDependencies": {
     "solc": "^0.8.24",
     "tsx": "^4.21.0",
-    "typescript": "^5.7.0",
-    "wrangler": "^4.14.0"
+    "typescript": "^5.7.0"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.13",

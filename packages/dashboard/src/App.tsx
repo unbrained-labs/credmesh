@@ -58,7 +58,7 @@ export default function App() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-bg">
         <p className="text-text-muted text-xs">
-          &gt; connecting to trustvault-credit...<span className="animate-blink">|</span>
+          &gt; connecting to credmesh...<span className="animate-blink">|</span>
         </p>
       </div>
     );

@@ -32,7 +32,7 @@ For testing or LP deposits: `POST /faucet/0xYourAddress` (100 tUSDC per drip, 1h
 ## Base URL
 
 ```
-https://credit.unbrained.club
+https://credmesh.xyz
 ```
 
 ## Quick Start (for agents)
@@ -212,10 +212,10 @@ Deposit tUSDC into the ERC-4626 vault. You receive `cmCREDIT` shares. As agents 
 
 **Check your position:** `GET /vault/position/:address` — your shares, current value, accrued yield.
 
-**Deposit via dashboard:** https://credmesh-dashboard.pages.dev — connect wallet, click deposit.
+**Deposit via dashboard:** https://credmesh.xyz — connect wallet, click deposit.
 
 Idle capital is withdrawable instantly. Deployed capital (in active advances) unlocks as agents repay.
 
 ## Dashboard
 
-Human-readable monitoring: https://credmesh-dashboard.pages.dev
+Human-readable monitoring: https://credmesh.xyz

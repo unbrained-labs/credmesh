@@ -133,7 +133,7 @@ export function agentCard(env: Env) {
       fees: `${base}/fees`,
       agentCard: `${base}/.well-known/agent.json`,
       agentLog: `${base}/agent_log.json`,
-      dashboard: "https://credmesh-dashboard.pages.dev",
+      dashboard: "https://credmesh.xyz",
       skillGuide: "https://github.com/unbrained-labs/credmesh/blob/main/SKILL.md",
       api: {
         registerAgent: { method: "POST", path: "/agents/register" },

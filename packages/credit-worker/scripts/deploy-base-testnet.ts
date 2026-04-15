@@ -486,9 +486,9 @@ async function main() {
   console.log(`    RegistryReceivableOracle proposed — execute after ${TIMELOCK_DELAY / 3600}h`);
   console.log();
 
-  console.log("── Wrangler Secrets ──");
+  console.log("── Server Environment Variables ──");
   console.log();
-  const workerName = "credmesh";
+  console.log("Set these on your server (Coolify / Hetzner):");
   const secrets: Record<string, string> = {
     CHAIN_RPC_URL: BASE_SEPOLIA_RPC,
     CHAIN_ID: String(baseSepolia.id),
@@ -497,7 +497,7 @@ async function main() {
     CREDIT_ESCROW: escrowAddr,
   };
   for (const [key, val] of Object.entries(secrets)) {
-    console.log(`  echo "${val}" | npx wrangler secret put ${key} --name ${workerName}`);
+    console.log(`  ${key}=${val}`);
   }
 
   console.log();

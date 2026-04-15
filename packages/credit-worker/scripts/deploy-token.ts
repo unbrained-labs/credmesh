@@ -68,7 +68,7 @@ async function main() {
   console.log(`Balance: ${Number(bal as bigint) / 1e6} tUSDC`);
 
   console.log(`\n=== DONE ===\nToken: ${addr}`);
-  console.log(`\nSet secret:\n  echo "${addr}" | npx wrangler secret put TEST_USDC --name credmesh`);
+  console.log(`\nSet env var on your server (Coolify / Hetzner):\n  TEST_USDC=${addr}`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

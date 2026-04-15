@@ -3,6 +3,7 @@ import { Card } from './Card';
 import { DepositFlow } from './DepositFlow';
 import type { HealthResponse, PaymentMethods } from '../api';
 import { api } from '../api';
+import { API_BASE } from '../lib/config';
 
 interface UseCase {
   name: string;
@@ -23,8 +24,6 @@ interface UseCasesData {
   };
 }
 
-const BASE = import.meta.env.PROD ? 'https://credit.unbrained.club' : '/api';
-
 export function Landing({ vault }: { vault: HealthResponse['vault'] | null }) {
   const [data, setData] = useState<UseCasesData | null>(null);
   const [payments, setPayments] = useState<PaymentMethods | null>(null);
@@ -34,7 +33,7 @@ export function Landing({ vault }: { vault: HealthResponse['vault'] | null }) {
   );
 
   useEffect(() => {
-    fetch(`${BASE}/use-cases`).then(r => r.json()).then(setData).catch(() => {});
+    fetch(`${API_BASE}/use-cases`).then(r => r.json()).then(setData).catch(() => {});
     api.paymentMethods().then(setPayments).catch(() => {});
   }, []);
 

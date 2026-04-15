@@ -128,8 +128,8 @@ async function main() {
 
   console.log(`\n=== DONE ===`);
   console.log(`Vault: ${vaultAddr}`);
-  console.log(`\nSet secret:`);
-  console.log(`  echo "${vaultAddr}" | npx wrangler secret put CREDIT_VAULT --name credmesh`);
+  console.log(`\nSet env var on your server (Coolify / Hetzner):`);
+  console.log(`  CREDIT_VAULT=${vaultAddr}`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

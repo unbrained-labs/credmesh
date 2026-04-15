@@ -1,4 +1,5 @@
 import { BrowserProvider, Contract, parseUnits, type Signer } from 'ethers';
+import { API_BASE } from './config';
 
 // Contract addresses (Sepolia)
 const TOKEN_ADDRESS = '0x60f6420c4575bd2777bbd031c2b5b960dfbfc5d8'; // TestUSDC
@@ -78,8 +79,7 @@ export async function connectWallet(): Promise<WalletState> {
   let vaultShares: string | null = null;
   let shareValue: string | null = null;
   try {
-    const BASE = import.meta.env.PROD ? 'https://credit.unbrained.club' : '/api';
-    const res = await fetch(`${BASE}/vault/position/${address}`);
+    const res = await fetch(`${API_BASE}/vault/position/${address}`);
     const data = await res.json();
     tokenBalance = data.wallet?.tUSDC ?? '0';
     vaultShares = data.position?.shares ?? null;

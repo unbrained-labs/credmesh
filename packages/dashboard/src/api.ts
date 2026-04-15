@@ -1,6 +1,4 @@
-const BASE = import.meta.env.PROD
-  ? 'https://credit.unbrained.club'
-  : '/api';
+import { API_BASE as BASE } from './lib/config';
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`);

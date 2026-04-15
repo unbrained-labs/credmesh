@@ -74,7 +74,7 @@ export function respond(c: Context, data: unknown, opts: RespondOptions) {
     <pre class="raw">${escapeHtml(json)}</pre>
     <div class="nav">
       <a href="/" class="btn-back">&larr; Landing</a>
-      <a href="https://credmesh-dashboard.pages.dev" class="btn-back">Dashboard</a>
+      <a href="https://credmesh.xyz" class="btn-back">Dashboard</a>
       <a href="/.well-known/agent.json" class="btn-back">Agent Card</a>
     </div>
   </div>
