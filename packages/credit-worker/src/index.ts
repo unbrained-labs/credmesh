@@ -32,10 +32,18 @@ export function setAgent(agent: CreditAgent): void {
 
 const app = new Hono<{ Bindings: Env; Variables: { verifiedAddress: string } }>();
 
+// The dashboard is now same-origin at /app, so CORS only needs to cover
+// external agent integrations hitting the public GET endpoints. Admin and
+// signed-write flows are intentionally excluded from the allowlist.
+const CORS_ALLOWED_ORIGINS = new Set([
+  "https://credmesh.xyz",
+  "https://www.credmesh.xyz",
+  "http://localhost:5173",
+]);
 app.use("*", cors({
-  origin: (origin) => origin,
+  origin: (origin) => (CORS_ALLOWED_ORIGINS.has(origin) ? origin : null),
   allowMethods: ["GET", "POST", "OPTIONS"],
-  allowHeaders: ["Content-Type", "X-Agent-Address", "X-Agent-Signature", "X-Agent-Timestamp", "X-Admin-Secret", "Accept"],
+  allowHeaders: ["Content-Type", "X-Agent-Address", "X-Agent-Signature", "X-Agent-Timestamp", "Accept"],
 }));
 
 // Auth on financial endpoints — POST requires wallet signature, GET is public
@@ -77,6 +85,9 @@ const serveDashboard = async (c: Parameters<typeof dashboardIndex>[0]) => {
 };
 app.get("/app", serveDashboard);
 app.get("/app/", serveDashboard);
+// SPA fallback — any deep path under /app serves index.html so client-side
+// routing works on refresh and bookmarked URLs.
+app.get("/app/*", serveDashboard);
 
 // ─── Discovery ───
 

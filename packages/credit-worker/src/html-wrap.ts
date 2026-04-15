@@ -16,7 +16,11 @@ interface RespondOptions {
 }
 
 export function wantsHtml(c: Context): boolean {
-  return (c.req.header("accept") ?? "").includes("text/html");
+  // Use the first (highest-priority) media type in Accept to decide. Browsers
+  // send "text/html,..."; agents send "application/json" (and sometimes list
+  // text/html with a low q-value); curl sends "*/*" and gets JSON.
+  const first = (c.req.header("accept") ?? "").split(",")[0]?.trim() ?? "";
+  return first.startsWith("text/html");
 }
 
 export function respond(c: Context, data: unknown, opts: RespondOptions) {

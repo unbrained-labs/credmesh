@@ -78,10 +78,28 @@ async function main() {
 
   const wrappedFetch = (req: Request) => app.fetch(req, env);
 
-  serve({ fetch: wrappedFetch, port: PORT }, (info) => {
+  const server = serve({ fetch: wrappedFetch, port: PORT }, (info) => {
     console.log(`CredMesh API running on http://localhost:${info.port}`);
     console.log(`Health: http://localhost:${info.port}/health`);
   });
+
+  // Graceful shutdown — Coolify sends SIGTERM then SIGKILL after ~10s. Drain
+  // in-flight HTTP requests, checkpoint the WAL, and close the DB handle so
+  // prepared statements finalize cleanly.
+  const shutdown = (signal: string) => {
+    console.log(`Received ${signal}, shutting down…`);
+    server.close(() => {
+      try {
+        db.pragma("wal_checkpoint(TRUNCATE)");
+        db.close();
+      } catch (e) {
+        console.error("DB shutdown error:", e);
+      }
+      process.exit(0);
+    });
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 main().catch((e) => {
