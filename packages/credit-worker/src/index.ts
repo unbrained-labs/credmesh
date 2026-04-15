@@ -14,9 +14,12 @@ import { getX402Config } from "./x402";
 import { getPaymentMethods } from "./payments";
 import { mppGate, isMppEnabled } from "./mpp";
 import { getActiveChains, getChainConfig, getChainClients, explorerUrl } from "./chains";
-import { respond } from "./html-wrap";
+import { respond, wantsHtml } from "./html-wrap";
 import { landingHTML } from "./landing";
 import { SKILL_MD } from "./skill-content";
+
+const DASHBOARD_DIST = "./packages/dashboard/dist";
+const LANDING_HTML = landingHTML();
 import { errMsg } from "./utils";
 import { pad } from "viem";
 import type { AgentRegistrationInput, Env, PortfolioReport, RiskReport, SpendCategory, TimelineEvent, TreasuryState } from "./types";
@@ -53,34 +56,27 @@ const adminGuard = createMiddleware<{ Bindings: Env }>(async (c, next) => {
 });
 
 // ─── Static dashboard assets ───
-// Vite emits absolute /assets/* paths, so these live at the root regardless of
-// where the dashboard HTML itself is served.
-app.use("/assets/*", serveStatic({ root: "./packages/dashboard/dist" }));
-app.get("/favicon.svg", serveStatic({ root: "./packages/dashboard/dist", path: "favicon.svg" }));
+// Vite emits absolute /assets/* paths, so these live at the root even though
+// the dashboard HTML is served from /app.
+app.use("/assets/*", serveStatic({ root: DASHBOARD_DIST }));
+app.get("/favicon.svg", serveStatic({ root: DASHBOARD_DIST, path: "favicon.svg" }));
 
-const dashboardIndex = serveStatic({ root: "./packages/dashboard/dist", path: "index.html" });
+const dashboardIndex = serveStatic({ root: DASHBOARD_DIST, path: "index.html" });
+const noop = async () => {};
 
-// ─── Root ───
-// Agents (Accept: application/json) get the agent card.
-// Browsers get the marketing landing page.
 app.get("/", (c) => {
-  const accept = c.req.header("accept") ?? "";
-  if (accept.includes("application/json") && !accept.includes("text/html")) {
-    return c.json(agentCard(c.env));
-  }
+  if (!wantsHtml(c)) return c.json(agentCard(c.env));
   c.header("Content-Type", "text/html; charset=utf-8");
-  return c.body(landingHTML());
+  c.header("Cache-Control", "public, max-age=3600");
+  return c.body(LANDING_HTML);
 });
 
-// ─── Dashboard (React app) ───
-app.get("/app", async (c) => {
-  const res = await dashboardIndex(c, async () => {});
+const serveDashboard = async (c: Parameters<typeof dashboardIndex>[0]) => {
+  const res = await dashboardIndex(c, noop);
   return res instanceof Response ? res : c.notFound();
-});
-app.get("/app/", async (c) => {
-  const res = await dashboardIndex(c, async () => {});
-  return res instanceof Response ? res : c.notFound();
-});
+};
+app.get("/app", serveDashboard);
+app.get("/app/", serveDashboard);
 
 // ─── Discovery ───
 

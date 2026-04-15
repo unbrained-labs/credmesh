@@ -15,12 +15,12 @@ interface RespondOptions {
   backLabel?: string;
 }
 
+export function wantsHtml(c: Context): boolean {
+  return (c.req.header("accept") ?? "").includes("text/html");
+}
+
 export function respond(c: Context, data: unknown, opts: RespondOptions) {
-  const accept = c.req.header("accept") ?? "";
-  if (accept.includes("application/json") && !accept.includes("text/html")) {
-    return c.json(data);
-  }
-  if (!accept.includes("text/html")) {
+  if (!wantsHtml(c)) {
     return c.json(data);
   }
 

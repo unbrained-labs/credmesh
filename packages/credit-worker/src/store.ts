@@ -40,20 +40,29 @@ export class MemoryStore implements StateStore {
  *   import Database from "better-sqlite3";
  *   const store = new SqliteStore(new Database("./data/credmesh.db"));
  */
+type PreparedStatement = {
+  run: (...args: unknown[]) => void;
+  get: (...args: unknown[]) => { value: string } | undefined;
+};
+type BetterSqliteDb = { prepare: (sql: string) => PreparedStatement };
+
 export class SqliteStore implements StateStore {
-  private db: { prepare: (sql: string) => { run: (...args: unknown[]) => void; get: (...args: unknown[]) => { value: string } | undefined } };
+  private loadStmt: PreparedStatement;
+  private saveStmt: PreparedStatement;
 
   constructor(db: unknown) {
-    this.db = db as typeof this.db;
-    this.db.prepare("CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)").run();
+    const database = db as BetterSqliteDb;
+    database.prepare("CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)").run();
+    this.loadStmt = database.prepare("SELECT value FROM kv WHERE key = ?");
+    this.saveStmt = database.prepare("INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)");
   }
 
   async load(): Promise<AgentState | null> {
-    const row = this.db.prepare("SELECT value FROM kv WHERE key = ?").get("state");
+    const row = this.loadStmt.get("state");
     return row ? JSON.parse(row.value) : null;
   }
 
   async save(state: AgentState): Promise<void> {
-    this.db.prepare("INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)").run("state", JSON.stringify(state));
+    this.saveStmt.run("state", JSON.stringify(state));
   }
 }
