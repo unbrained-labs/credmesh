@@ -16,13 +16,16 @@ contract TrustlessEscrowV3Test is Test {
     uint256 constant INITIAL_LP_DEPOSIT = 10_000 * USDC;
     uint256 constant ADVANCE_AMOUNT = 1_000 * USDC;
     uint256 constant FEE_BPS = 500; // 5%
+    uint256 constant PROTOCOL_FEE_BPS = 1500; // 15% of advance fee
     uint256 constant MIN_CREDIT = 20;
     uint256 constant HARD_CAP = 10_000 * USDC;
     uint256 constant MAX_EXPOSURE = 100_000 * USDC;
     uint256 constant ORACLE_RATIO = 10000; // 100%
+    uint256 constant ADVANCE_DURATION = 7 days;
 
     // ─── Actors ───
     address governance = address(this);
+    address treasury = makeAddr("treasury");
     address lp1 = makeAddr("lp1");
     address lp2 = makeAddr("lp2");
     address agent = makeAddr("agent");
@@ -50,7 +53,10 @@ contract TrustlessEscrowV3Test is Test {
             FEE_BPS,
             HARD_CAP,
             TIMELOCK,
-            MAX_EXPOSURE
+            MAX_EXPOSURE,
+            ADVANCE_DURATION,
+            treasury,
+            PROTOCOL_FEE_BPS
         );
 
         // Wire the mock oracle to read exposure from the real escrow
@@ -97,7 +103,7 @@ contract TrustlessEscrowV3Test is Test {
 
     function test_Deployment_revertsZeroToken() public {
         vm.expectRevert("zero token");
-        new TrustlessEscrowV3(address(0), address(creditOracle), MIN_CREDIT, FEE_BPS, HARD_CAP, TIMELOCK, MAX_EXPOSURE);
+        new TrustlessEscrowV3(address(0), address(creditOracle), MIN_CREDIT, FEE_BPS, HARD_CAP, TIMELOCK, MAX_EXPOSURE, ADVANCE_DURATION, treasury, PROTOCOL_FEE_BPS);
     }
 
     // ═════════════════════════════════════════════════════════════
@@ -211,6 +217,12 @@ contract TrustlessEscrowV3Test is Test {
         uint256 sharePriceAfter = escrow.convertToAssets(SHARES_UNIT);
         assertGt(sharePriceAfter, sharePriceBefore, "share price should rise after fee accrual");
         assertEq(escrow.totalFeesEarned(), fee, "totalFeesEarned should track");
+
+        uint256 expectedProtocol = (fee * PROTOCOL_FEE_BPS) / 10000;
+        uint256 expectedLP = fee - expectedProtocol;
+        assertEq(escrow.totalProtocolFeesEarned(), expectedProtocol, "protocol fees should track");
+        assertEq(escrow.totalLPFeesEarned(), expectedLP, "LP fees should track");
+        assertEq(escrow.accruedProtocolFees(), expectedProtocol, "accrued protocol fees should track");
     }
 
     function test_Advance_lpRedeemsAtProfit() public {
@@ -224,14 +236,15 @@ contract TrustlessEscrowV3Test is Test {
         escrow.settle(advId, ADVANCE_AMOUNT + fee);
         vm.stopPrank();
 
-        // Use maxRedeem (not balanceOf) to account for rounding in share conversion
+        uint256 lpFee = fee - (fee * PROTOCOL_FEE_BPS) / 10000;
+
         uint256 redeemable = escrow.maxRedeem(lp1);
         vm.startPrank(lp1);
         uint256 redeemed = escrow.redeem(redeemable, lp1, lp1);
         vm.stopPrank();
 
         assertGt(redeemed, INITIAL_LP_DEPOSIT, "LP should redeem more than deposited (fee earned)");
-        assertApproxEqAbs(redeemed, INITIAL_LP_DEPOSIT + fee, 2, "profit should equal the fee (1 wei tolerance)");
+        assertApproxEqAbs(redeemed, INITIAL_LP_DEPOSIT + lpFee, 2, "profit should equal LP share of fee");
     }
 
     // ═════════════════════════════════════════════════════════════
@@ -351,8 +364,9 @@ contract TrustlessEscrowV3Test is Test {
         escrow.settle(advId, ADVANCE_AMOUNT + fee + overpayment);
         vm.stopPrank();
 
-        // totalAssets should be initial deposit + fee, NOT including the unclaimed overpayment
-        assertEq(escrow.totalAssets(), INITIAL_LP_DEPOSIT + fee, "unclaimed remainder must not inflate totalAssets");
+        uint256 protocolCut = (fee * PROTOCOL_FEE_BPS) / 10000;
+        uint256 lpFee = fee - protocolCut;
+        assertEq(escrow.totalAssets(), INITIAL_LP_DEPOSIT + lpFee, "unclaimed remainder and protocol fees must not inflate totalAssets");
     }
 
     // ═════════════════════════════════════════════════════════════
@@ -397,30 +411,26 @@ contract TrustlessEscrowV3Test is Test {
     function test_IdleOnly_fullCycle() public {
         _lpDeposit(lp1, INITIAL_LP_DEPOSIT);
 
-        // Advance depletes most of pool
         bytes32 advId = _issueAdvance(agent, JOB_ID, 8_000 * USDC);
 
-        // LP can only withdraw idle portion
         assertEq(escrow.maxWithdraw(lp1), 2_000 * USDC, "only idle 2000 available");
 
-        // Settle returns capital + fee
         uint256 fee = (8_000 * USDC * FEE_BPS) / 10000;
         vm.startPrank(agent);
         usdc.approve(address(escrow), 8_000 * USDC + fee);
         escrow.settle(advId, 8_000 * USDC + fee);
         vm.stopPrank();
 
-        // Now LP can withdraw full amount (original + fee), within 1 wei of rounding
+        uint256 lpFee = fee - (fee * PROTOCOL_FEE_BPS) / 10000;
         uint256 maxNow = escrow.maxWithdraw(lp1);
-        assertApproxEqAbs(maxNow, INITIAL_LP_DEPOSIT + fee, 2, "full amount + fee available after settle");
+        assertApproxEqAbs(maxNow, INITIAL_LP_DEPOSIT + lpFee, 2, "full amount + LP fee available after settle");
 
-        // Actually withdraw using maxRedeem for rounding safety
         uint256 redeemable = escrow.maxRedeem(lp1);
         vm.startPrank(lp1);
         uint256 redeemed = escrow.redeem(redeemable, lp1, lp1);
         vm.stopPrank();
 
-        assertApproxEqAbs(redeemed, INITIAL_LP_DEPOSIT + fee, 2, "LP exits with profit");
+        assertApproxEqAbs(redeemed, INITIAL_LP_DEPOSIT + lpFee, 2, "LP exits with profit");
     }
 
     // ═════════════════════════════════════════════════════════════
@@ -543,10 +553,9 @@ contract TrustlessEscrowV3Test is Test {
         bytes32 advId = _issueAdvance(agent, JOB_ID, ADVANCE_AMOUNT);
 
         uint256 expectedOutstanding = escrow.totalAdvanced() - escrow.totalRepaid() - escrow.totalLiquidated();
-        uint256 expectedAssets = usdc.balanceOf(address(escrow)) - escrow.totalUnclaimedRemainders() + expectedOutstanding;
-        assertEq(escrow.totalAssets(), expectedAssets, "totalAssets = idle - unclaimed + outstanding");
+        uint256 expectedAssets = usdc.balanceOf(address(escrow)) - escrow.totalUnclaimedRemainders() - escrow.accruedProtocolFees() + expectedOutstanding;
+        assertEq(escrow.totalAssets(), expectedAssets, "totalAssets = idle - unclaimed - protocolFees + outstanding");
 
-        // After settle
         uint256 fee = (ADVANCE_AMOUNT * FEE_BPS) / 10000;
         vm.startPrank(agent);
         usdc.approve(address(escrow), ADVANCE_AMOUNT + fee);
@@ -554,7 +563,7 @@ contract TrustlessEscrowV3Test is Test {
         vm.stopPrank();
 
         expectedOutstanding = escrow.totalAdvanced() - escrow.totalRepaid() - escrow.totalLiquidated();
-        expectedAssets = usdc.balanceOf(address(escrow)) - escrow.totalUnclaimedRemainders() + expectedOutstanding;
+        expectedAssets = usdc.balanceOf(address(escrow)) - escrow.totalUnclaimedRemainders() - escrow.accruedProtocolFees() + expectedOutstanding;
         assertEq(escrow.totalAssets(), expectedAssets, "equation holds after settle");
     }
 
@@ -563,12 +572,152 @@ contract TrustlessEscrowV3Test is Test {
         _lpDeposit(lp2, 5_000 * USDC);
         _issueAdvance(agent, JOB_ID, ADVANCE_AMOUNT);
 
-        uint256 idle = usdc.balanceOf(address(escrow)) - escrow.totalUnclaimedRemainders();
+        uint256 idle = usdc.balanceOf(address(escrow)) - escrow.totalUnclaimedRemainders() - escrow.accruedProtocolFees();
         assertLe(escrow.maxWithdraw(lp1), idle, "lp1 maxWithdraw <= idle");
         assertLe(escrow.maxWithdraw(lp2), idle, "lp2 maxWithdraw <= idle");
-        // Note: sum of individual maxWithdraws may exceed idle (each LP is independently
-        // bounded by idle). They can't all withdraw simultaneously for more than idle total.
-        // This is standard ERC-4626 behavior, not a bug.
+    }
+
+    // ═════════════════════════════════════════════════════════════
+    // 11. Protocol Fee Split
+    // ═════════════════════════════════════════════════════════════
+
+    function test_ProtocolFee_splitOnSettle() public {
+        _lpDeposit(lp1, INITIAL_LP_DEPOSIT);
+        bytes32 advId = _issueAdvance(agent, JOB_ID, ADVANCE_AMOUNT);
+
+        uint256 fee = (ADVANCE_AMOUNT * FEE_BPS) / 10000;
+        uint256 expectedProtocol = (fee * PROTOCOL_FEE_BPS) / 10000;
+        uint256 expectedLP = fee - expectedProtocol;
+
+        vm.startPrank(agent);
+        usdc.approve(address(escrow), ADVANCE_AMOUNT + fee);
+        escrow.settle(advId, ADVANCE_AMOUNT + fee);
+        vm.stopPrank();
+
+        assertEq(escrow.accruedProtocolFees(), expectedProtocol, "protocol fees accrued");
+        assertEq(escrow.totalLPFeesEarned(), expectedLP, "LP fees tracked");
+        assertEq(escrow.totalProtocolFeesEarned(), expectedProtocol, "protocol fees tracked");
+        assertEq(escrow.totalAssets(), INITIAL_LP_DEPOSIT + expectedLP, "totalAssets excludes protocol cut");
+    }
+
+    function test_ProtocolFee_withdrawSendsToTreasury() public {
+        _lpDeposit(lp1, INITIAL_LP_DEPOSIT);
+        bytes32 advId = _issueAdvance(agent, JOB_ID, ADVANCE_AMOUNT);
+
+        uint256 fee = (ADVANCE_AMOUNT * FEE_BPS) / 10000;
+        vm.startPrank(agent);
+        usdc.approve(address(escrow), ADVANCE_AMOUNT + fee);
+        escrow.settle(advId, ADVANCE_AMOUNT + fee);
+        vm.stopPrank();
+
+        uint256 protocolCut = escrow.accruedProtocolFees();
+        assertGt(protocolCut, 0, "should have protocol fees");
+
+        uint256 treasuryBefore = usdc.balanceOf(treasury);
+        escrow.withdrawProtocolFees();
+        uint256 treasuryAfter = usdc.balanceOf(treasury);
+
+        assertEq(treasuryAfter - treasuryBefore, protocolCut, "treasury receives protocol fees");
+        assertEq(escrow.accruedProtocolFees(), 0, "accrued fees cleared");
+    }
+
+    function test_ProtocolFee_withdrawRevertsNoTreasury() public {
+        TrustlessEscrowV3 noTreasuryEscrow = new TrustlessEscrowV3(
+            address(usdc), address(creditOracle), MIN_CREDIT, FEE_BPS,
+            HARD_CAP, TIMELOCK, MAX_EXPOSURE, ADVANCE_DURATION, address(0), PROTOCOL_FEE_BPS
+        );
+        vm.expectRevert("no treasury set");
+        noTreasuryEscrow.withdrawProtocolFees();
+    }
+
+    function test_ProtocolFee_withdrawRevertsNoFees() public {
+        vm.expectRevert("no fees to withdraw");
+        escrow.withdrawProtocolFees();
+    }
+
+    function test_ProtocolFee_zeroProtocolBpsMeansAllToLP() public {
+        TrustlessEscrowV3 noProtocolEscrow = new TrustlessEscrowV3(
+            address(usdc), address(creditOracle), MIN_CREDIT, FEE_BPS,
+            HARD_CAP, TIMELOCK, MAX_EXPOSURE, ADVANCE_DURATION, treasury, 0
+        );
+        creditOracle.setEscrow(address(noProtocolEscrow));
+        noProtocolEscrow.proposeOracleAdd(address(receivableOracle), ORACLE_RATIO);
+        vm.warp(block.timestamp + TIMELOCK + 1);
+        noProtocolEscrow.executeOracleAdd(address(receivableOracle));
+        creditOracle.setScore(agent, 80);
+
+        vm.startPrank(lp1);
+        usdc.approve(address(noProtocolEscrow), INITIAL_LP_DEPOSIT);
+        noProtocolEscrow.deposit(INITIAL_LP_DEPOSIT, lp1);
+        vm.stopPrank();
+
+        receivableOracle.register(JOB_ID, agent, ADVANCE_AMOUNT);
+        vm.startPrank(agent);
+        bytes32 advId = noProtocolEscrow.requestAdvance(address(receivableOracle), JOB_ID, ADVANCE_AMOUNT);
+        vm.stopPrank();
+
+        uint256 fee = (ADVANCE_AMOUNT * FEE_BPS) / 10000;
+        vm.startPrank(agent);
+        usdc.approve(address(noProtocolEscrow), ADVANCE_AMOUNT + fee);
+        noProtocolEscrow.settle(advId, ADVANCE_AMOUNT + fee);
+        vm.stopPrank();
+
+        assertEq(noProtocolEscrow.accruedProtocolFees(), 0, "no protocol fees when bps=0");
+        assertEq(noProtocolEscrow.totalLPFeesEarned(), fee, "all fees go to LP");
+        assertEq(noProtocolEscrow.totalAssets(), INITIAL_LP_DEPOSIT + fee, "LP gets full fee");
+    }
+
+    // ═════════════════════════════════════════════════════════════
+    // 12. Timelocked Protocol Fee Changes
+    // ═════════════════════════════════════════════════════════════
+
+    function test_ProtocolFee_timelockProposeBps() public {
+        escrow.proposeProtocolFeeBps(2000);
+
+        vm.expectRevert("timelock active");
+        escrow.executeProtocolFeeBps();
+
+        vm.warp(block.timestamp + TIMELOCK + 1);
+        escrow.executeProtocolFeeBps();
+
+        assertEq(escrow.protocolFeeBps(), 2000, "protocol fee bps updated");
+    }
+
+    function test_ProtocolFee_timelockRevertsTooHigh() public {
+        vm.expectRevert("protocol fee too high");
+        escrow.proposeProtocolFeeBps(5001);
+    }
+
+    function test_ProtocolFee_timelockProposeTreasury() public {
+        address newTreasury = makeAddr("newTreasury");
+        escrow.proposeProtocolTreasury(newTreasury);
+
+        vm.warp(block.timestamp + TIMELOCK + 1);
+        escrow.executeProtocolTreasury(newTreasury);
+
+        assertEq(escrow.protocolTreasury(), newTreasury, "treasury updated");
+    }
+
+    function test_ProtocolFee_protocolFeesExcludedFromSharePrice() public {
+        _lpDeposit(lp1, INITIAL_LP_DEPOSIT);
+        bytes32 advId = _issueAdvance(agent, JOB_ID, ADVANCE_AMOUNT);
+
+        uint256 fee = (ADVANCE_AMOUNT * FEE_BPS) / 10000;
+        vm.startPrank(agent);
+        usdc.approve(address(escrow), ADVANCE_AMOUNT + fee);
+        escrow.settle(advId, ADVANCE_AMOUNT + fee);
+        vm.stopPrank();
+
+        uint256 protocolCut = (fee * PROTOCOL_FEE_BPS) / 10000;
+        uint256 lpFee = fee - protocolCut;
+
+        uint256 redeemable = escrow.maxRedeem(lp1);
+        vm.startPrank(lp1);
+        uint256 redeemed = escrow.redeem(redeemable, lp1, lp1);
+        vm.stopPrank();
+
+        assertApproxEqAbs(redeemed, INITIAL_LP_DEPOSIT + lpFee, 2, "LP gets only 85% of fee");
+        assertLt(redeemed, INITIAL_LP_DEPOSIT + fee, "LP does NOT get full fee");
     }
 
     // ═════════════════════════════════════════════════════════════

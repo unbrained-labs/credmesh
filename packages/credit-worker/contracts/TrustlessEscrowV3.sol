@@ -44,6 +44,7 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
 
     uint256 public constant MAX_ADVANCE_RATIO_CAP = 10000; // 100%
     uint256 public constant MAX_FEE_CAP = 2500; // 25%
+    uint256 public constant MAX_PROTOCOL_FEE_CAP = 5000; // 50% of advance fee
     uint256 public constant MIN_CREDIT_SCORE_FLOOR = 10;
     uint256 public constant GOVERNANCE_ACCEPT_WINDOW = 7 days;
 
@@ -66,6 +67,12 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     uint256 public maxExposurePerAgent;
     uint256 public advanceDuration;
 
+    // ─── Protocol Fee Split ───
+
+    address public protocolTreasury;
+    uint256 public protocolFeeBps; // fraction of advance fee taken by protocol (e.g. 1500 = 15%)
+    uint256 public accruedProtocolFees;
+
     // ─── Timelocked Changes ───
 
     struct PendingChange {
@@ -86,6 +93,8 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     uint256 public pendingHardCapExecuteAfter;
     uint256 public pendingMaxExposure;
     uint256 public pendingMaxExposureExecuteAfter;
+    uint256 public pendingProtocolFeeBps;
+    uint256 public pendingProtocolFeeBpsExecuteAfter;
 
     // ─── Oracle Registry ───
 
@@ -113,7 +122,8 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
 
     uint256 public totalAdvanced;
     uint256 public totalRepaid;
-    uint256 public totalFeesEarned;
+    uint256 public totalLPFeesEarned;
+    uint256 public totalProtocolFeesEarned;
     uint256 public totalLiquidated;
     uint256 private _advanceNonce;
 
@@ -152,6 +162,10 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     event HardCapUpdated(uint256 oldCap, uint256 newCap);
     event MaxExposureProposed(uint256 newExposure, uint256 executeAfter);
     event MaxExposureUpdated(uint256 oldExposure, uint256 newExposure);
+    event ProtocolFeeBpsProposed(uint256 newBps, uint256 executeAfter);
+    event ProtocolFeeBpsUpdated(uint256 oldBps, uint256 newBps);
+    event ProtocolTreasuryUpdated(address oldTreasury, address newTreasury);
+    event ProtocolFeesWithdrawn(address indexed to, uint256 amount);
 
     // ─── Modifiers ───
 
@@ -168,9 +182,12 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     /// @param _feeBps Fee in basis points charged on each advance (max 2500 = 25%)
     /// @param _hardCapPerAdvance Maximum single advance amount
     /// @param _timelockDelay Seconds before governance changes take effect.
-    ///        Use short values (300) for testnet iteration, long values (172800)
+    ///        Use short values (30) for testnet iteration, long values (172800)
     ///        for mainnet. A value of 1 is allowed but functionally no timelock.
     /// @param _maxExposurePerAgent Maximum outstanding principal per agent
+    /// @param _advanceDuration Time before an advance expires and becomes liquidatable (1h–365d)
+    /// @param _protocolTreasury Address receiving protocol fee share (can be zero initially)
+    /// @param _protocolFeeBps Fraction of each advance fee taken by protocol (e.g. 1500 = 15%)
     constructor(
         address _token,
         address _creditOracle,
@@ -178,7 +195,10 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         uint256 _feeBps,
         uint256 _hardCapPerAdvance,
         uint256 _timelockDelay,
-        uint256 _maxExposurePerAgent
+        uint256 _maxExposurePerAgent,
+        uint256 _advanceDuration,
+        address _protocolTreasury,
+        uint256 _protocolFeeBps
     )
         ERC4626(IERC20(_token))
         ERC20("CredMesh Shares", "cmCREDIT")
@@ -190,6 +210,9 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         require(_hardCapPerAdvance > 0, "zero cap");
         require(_timelockDelay >= 1, "zero delay");
         require(_maxExposurePerAgent > 0, "zero max exposure");
+        require(_advanceDuration >= 1 hours, "duration too short");
+        require(_advanceDuration <= 365 days, "duration too long");
+        require(_protocolFeeBps <= MAX_PROTOCOL_FEE_CAP, "protocol fee too high");
 
         timelockDelay = _timelockDelay;
         governance = msg.sender;
@@ -198,7 +221,19 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         feeBps = _feeBps;
         hardCapPerAdvance = _hardCapPerAdvance;
         maxExposurePerAgent = _maxExposurePerAgent;
-        advanceDuration = 7 days;
+        advanceDuration = _advanceDuration;
+        protocolTreasury = _protocolTreasury;
+        protocolFeeBps = _protocolFeeBps;
+
+        emit GovernanceTransferred(address(0), msg.sender);
+        emit ParametersUpdated(_minCreditScore, _feeBps);
+        emit HardCapUpdated(0, _hardCapPerAdvance);
+        emit MaxExposureUpdated(0, _maxExposurePerAgent);
+        emit AdvanceDurationUpdated(0, _advanceDuration);
+        emit ProtocolFeeBpsUpdated(0, _protocolFeeBps);
+        if (_protocolTreasury != address(0)) {
+            emit ProtocolTreasuryUpdated(address(0), _protocolTreasury);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -218,7 +253,7 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     /// price rises automatically. Liquidated principal is subtracted from
     /// outstanding, so share price drops — LPs absorb losses pro-rata.
     function totalAssets() public view override returns (uint256) {
-        return IERC20(asset()).balanceOf(address(this)) - totalUnclaimedRemainders + outstandingPrincipal();
+        return _idleBalance() + outstandingPrincipal();
     }
 
     /// @notice Idle-only withdrawal. LPs can only redeem up to the contract's
@@ -226,7 +261,7 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     /// withdrawable until it returns via settle or is written off via liquidate.
     function maxWithdraw(address owner) public view override returns (uint256) {
         uint256 ownerAssets = convertToAssets(balanceOf(owner));
-        uint256 idle = IERC20(asset()).balanceOf(address(this)) - totalUnclaimedRemainders;
+        uint256 idle = _idleBalance();
         return ownerAssets < idle ? ownerAssets : idle;
     }
 
@@ -257,22 +292,27 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     // View Helpers
     // ═══════════════════════════════════════════════════════════════
 
+    function totalFeesEarned() external view returns (uint256) {
+        return totalLPFeesEarned + totalProtocolFeesEarned;
+    }
+
     /// @notice Capital currently deployed in active (unsettled, unliquidated) advances.
     function outstandingPrincipal() public view returns (uint256) {
         return totalAdvanced - totalRepaid - totalLiquidated;
     }
 
-    /// @notice Pool utilization as a fraction of totalAssets (in basis points).
-    /// Returns 0 if pool is empty.
     function utilizationBps() external view returns (uint256) {
         uint256 total = totalAssets();
         if (total == 0) return 0;
         return (outstandingPrincipal() * 10000) / total;
     }
 
-    /// @notice Idle USDC available for new advances (excludes unclaimed remainders).
     function availableLiquidity() external view returns (uint256) {
-        return IERC20(asset()).balanceOf(address(this)) - totalUnclaimedRemainders;
+        return _idleBalance();
+    }
+
+    function _idleBalance() internal view returns (uint256) {
+        return IERC20(asset()).balanceOf(address(this)) - totalUnclaimedRemainders - accruedProtocolFees;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -480,6 +520,60 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // Governance: Protocol Fee Split
+    // ═══════════════════════════════════════════════════════════════
+
+    function proposeProtocolFeeBps(uint256 _protocolFeeBps) external onlyGovernance {
+        require(_protocolFeeBps <= MAX_PROTOCOL_FEE_CAP, "protocol fee too high");
+        pendingProtocolFeeBps = _protocolFeeBps;
+        pendingProtocolFeeBpsExecuteAfter = block.timestamp + timelockDelay;
+        emit ProtocolFeeBpsProposed(_protocolFeeBps, pendingProtocolFeeBpsExecuteAfter);
+    }
+
+    function executeProtocolFeeBps() external onlyGovernance {
+        require(pendingProtocolFeeBpsExecuteAfter > 0, "not proposed");
+        require(block.timestamp >= pendingProtocolFeeBpsExecuteAfter, "timelock active");
+        emit ProtocolFeeBpsUpdated(protocolFeeBps, pendingProtocolFeeBps);
+        protocolFeeBps = pendingProtocolFeeBps;
+        pendingProtocolFeeBps = 0;
+        pendingProtocolFeeBpsExecuteAfter = 0;
+    }
+
+    function cancelPendingProtocolFeeBps() external onlyGovernance {
+        require(pendingProtocolFeeBpsExecuteAfter > 0, "nothing to cancel");
+        pendingProtocolFeeBps = 0;
+        pendingProtocolFeeBpsExecuteAfter = 0;
+    }
+
+    function proposeProtocolTreasury(address _treasury) external onlyGovernance {
+        require(_treasury != address(0), "zero treasury");
+        bytes32 id = keccak256(abi.encode("protocolTreasury", _treasury));
+        pendingChanges[id] = PendingChange(_treasury, 0, block.timestamp + timelockDelay);
+        emit ChangeProposed(id, _treasury, 0, block.timestamp + timelockDelay);
+    }
+
+    function executeProtocolTreasury(address _treasury) external onlyGovernance {
+        bytes32 id = keccak256(abi.encode("protocolTreasury", _treasury));
+        PendingChange storage pc = pendingChanges[id];
+        require(pc.executeAfter > 0, "not proposed");
+        require(block.timestamp >= pc.executeAfter, "timelock active");
+        require(pc.target == _treasury, "target mismatch");
+        emit ProtocolTreasuryUpdated(protocolTreasury, _treasury);
+        protocolTreasury = _treasury;
+        delete pendingChanges[id];
+        emit ChangeExecuted(id, _treasury);
+    }
+
+    function withdrawProtocolFees() external onlyGovernance nonReentrant {
+        require(protocolTreasury != address(0), "no treasury set");
+        require(accruedProtocolFees > 0, "no fees to withdraw");
+        uint256 amount = accruedProtocolFees;
+        accruedProtocolFees = 0;
+        IERC20(asset()).safeTransfer(protocolTreasury, amount);
+        emit ProtocolFeesWithdrawn(protocolTreasury, amount);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // Public: Advance Lifecycle
     // ═══════════════════════════════════════════════════════════════
 
@@ -501,10 +595,7 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         _validateReceivable(oracle, receivableId, requestedAmount, ratioBps);
         _updateExposureAndCheckCredit(msg.sender, requestedAmount);
 
-        require(
-            IERC20(asset()).balanceOf(address(this)) - totalUnclaimedRemainders >= requestedAmount,
-            "insufficient liquidity"
-        );
+        require(_idleBalance() >= requestedAmount, "insufficient liquidity");
 
         uint256 fee = (requestedAmount * feeBps) / 10000;
         advanceId = keccak256(abi.encode(msg.sender, ++_advanceNonce));
@@ -549,7 +640,12 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         totalRepaid += adv.principal;
 
         remaining -= adv.fee;
-        totalFeesEarned += adv.fee;
+
+        uint256 protocolCut = (adv.fee * protocolFeeBps) / 10000;
+        uint256 lpCut = adv.fee - protocolCut;
+        accruedProtocolFees += protocolCut;
+        totalProtocolFeesEarned += protocolCut;
+        totalLPFeesEarned += lpCut;
 
         if (remaining > 0) {
             unclaimedRemainders[adv.agent] += remaining;

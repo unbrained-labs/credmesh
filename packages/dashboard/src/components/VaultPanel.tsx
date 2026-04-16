@@ -22,7 +22,7 @@ export function VaultPanel({ vault, chain }: { vault: HealthResponse['vault']; c
         </div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[11px]">
           <Row label="Total Assets" value={`$${fmt(vault.totalAssets)}`} color="text-white" />
-          <Row label="Total Shares" value={`${fmt(vault.totalShares)} tvCREDIT`} color="text-indigo" />
+          <Row label="Total Shares" value={`${fmt(vault.totalShares)} cmCREDIT`} color="text-indigo" />
           <Row label="Idle Balance" value={`$${fmt(vault.idleBalance)}`} color="text-cyan" />
           <Row label="In Escrow" value={`$${fmt(vault.inEscrow)}`} color="text-amber" />
           <Row label="Fees Earned" value={`$${fmt(vault.feesEarned)}`} color="text-green" />

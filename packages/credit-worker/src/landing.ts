@@ -129,7 +129,7 @@ export function landingHTML(): string {
   <!-- Hero -->
   <div class="hero">
     <h1>Programmable <em>working capital</em> for autonomous agents</h1>
-    <p>Non-custodial credit infrastructure on Base. Agents borrow against verified on-chain receivables with credit scoring. LPs earn yield via ERC-4626 vault. No operator approval — the contract enforces everything.</p>
+    <p>Non-custodial credit infrastructure on Base. Agents borrow on reputation alone — no collateral required. LPs earn 85% of fees via ERC-4626 vault. No operator approval — the contract enforces everything.</p>
     <div class="hero-cta">
       <a href="https://github.com/unbrained-labs/credmesh/blob/main/SKILL.md" class="btn btn-primary">Agent? Start Here</a>
       <a href="/app#deposit" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;">Deposit &amp; Earn Yield</a>
@@ -149,8 +149,8 @@ export function landingHTML(): string {
       </div>
       <div class="flow-step">
         <div class="num">02</div>
-        <div class="title">Receivable verified</div>
-        <div class="desc">The contract reads the IReceivableOracle — is there a real, funded, on-chain escrow backing this agent's work?</div>
+        <div class="title">Creditworthiness verified</div>
+        <div class="desc">ReputationOnlyOracle reads the agent's on-chain reputation score — no collateral locked. Optionally, agents can also back advances with funded receivables.</div>
       </div>
       <div class="flow-step">
         <div class="num">03</div>
@@ -170,7 +170,7 @@ export function landingHTML(): string {
       <div class="flow-step">
         <div class="num">06</div>
         <div class="title">Waterfall settles</div>
-        <div class="desc">Principal repaid first, then fees (100% to LP vault as share price increase), then remainder to agent. Reputation updated on-chain.</div>
+        <div class="desc">Principal repaid first, then fees (85% to LP vault as share price increase, 15% protocol), then remainder to agent. Reputation updated on-chain.</div>
       </div>
     </div>
   </section>
@@ -211,8 +211,8 @@ export function landingHTML(): string {
     <div class="section-label" style="color:#00e5ff;">For liquidity providers</div>
     <h2 style="font-size:32px;">Deposit USDC. Earn yield from agent credit fees.</h2>
     <p style="font-size:13px;color:#999;max-width:600px;margin:16px 0 32px;">
-      Agents borrow. They pay fees. 100% of those fees flow to LPs as vault share price appreciation.
-      ERC-4626 standard on Base Sepolia — connect wallet, deposit, done.
+      Agents borrow. They pay fees. 85% of those fees flow to LPs as vault share price appreciation.
+      15% accrues to the protocol treasury. ERC-4626 standard on Base Sepolia — connect wallet, deposit, done.
     </p>
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
       <a href="/app#deposit" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;font-size:13px;padding:14px 32px;">
@@ -230,7 +230,7 @@ export function landingHTML(): string {
       </div>
       <div class="stat">
         <div class="label">LP share</div>
-        <div class="value green">100%</div>
+        <div class="value green">85%</div>
         <div class="sub">Of all collected fees</div>
       </div>
       <div class="stat">
@@ -277,7 +277,7 @@ export function landingHTML(): string {
     <div class="integrations">
       <div class="integration">
         <div class="name">Base Sepolia</div>
-        <div class="chain">EscrowV3 + ERC-4626</div>
+        <div class="chain">EscrowV3.1 + ReputationOracle</div>
         <div class="status live">LIVE</div>
       </div>
       <div class="integration">

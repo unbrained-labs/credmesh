@@ -128,7 +128,7 @@ export function DepositFlow({ vault }: { vault: HealthResponse['vault'] | null }
             <div className="bg-bg border border-border p-2 text-center">
               <p className="text-[9px] uppercase tracking-widest text-text-muted">Your Shares</p>
               <p className="text-sm font-bold text-cyan">{parseFloat(wallet.vaultShares ?? '0').toFixed(2)}</p>
-              <p className="text-[9px] text-text-muted">tvCREDIT</p>
+              <p className="text-[9px] text-text-muted">cmCREDIT</p>
             </div>
             <div className="bg-bg border border-border p-2 text-center">
               <p className="text-[9px] uppercase tracking-widest text-text-muted">Value</p>
@@ -168,7 +168,7 @@ export function DepositFlow({ vault }: { vault: HealthResponse['vault'] | null }
               type="number"
               value={amount}
               onChange={e => setAmount(e.target.value)}
-              placeholder={mode === 'deposit' ? 'tUSDC amount' : 'tvCREDIT shares'}
+              placeholder={mode === 'deposit' ? 'tUSDC amount' : 'cmCREDIT shares'}
               className="flex-1 bg-bg border border-border px-2 py-1.5 text-xs text-white outline-none focus:border-green placeholder:text-text-muted/40"
             />
             <button
@@ -186,7 +186,7 @@ export function DepositFlow({ vault }: { vault: HealthResponse['vault'] | null }
 
           {mode === 'deposit' && amount && (
             <p className="text-[10px] text-text-muted">
-              You'll receive ~{(parseFloat(amount) / sharePrice).toFixed(2)} tvCREDIT shares
+              You'll receive ~{(parseFloat(amount) / sharePrice).toFixed(2)} cmCREDIT shares
             </p>
           )}
           {mode === 'withdraw' && amount && (

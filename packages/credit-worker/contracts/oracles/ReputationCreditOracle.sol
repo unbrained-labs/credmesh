@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "../interfaces/ICreditOracle.sol";
+import "../interfaces/IReputationRegistry.sol";
 
 /**
  * @title ReputationCreditOracle
@@ -72,10 +73,6 @@ contract ReputationCreditOracle is ICreditOracle {
         totalExposure = ITrustlessEscrow(escrow).exposure(agent);
         maxExposure = score * exposureMultiplier;
     }
-}
-
-interface IReputationRegistry {
-    function getReputation(address agent) external view returns (uint256 score, uint256 attestationCount);
 }
 
 interface ITrustlessEscrow {

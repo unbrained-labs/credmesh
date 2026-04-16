@@ -22,7 +22,7 @@ const VAULT_ABI = [
   'function convertToShares(uint256 assets) view returns (uint256)',
   'function convertToAssets(uint256 shares) view returns (uint256)',
   'function asset() view returns (address)',
-  'function vaultStats() view returns (uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256)',
+  'function decimals() view returns (uint8)',
 ];
 
 export interface WalletState {
@@ -125,7 +125,8 @@ export async function withdrawFromVault(shares: string, vaultAddress: string): P
   if (!signer) throw new Error('Wallet not connected');
 
   const vault = new Contract(vaultAddress, VAULT_ABI, signer);
-  const parsedShares = parseUnits(shares, 6); // cmCREDIT has 6 decimals (same as underlying)
+  const shareDecimals = await vault.decimals();
+  const parsedShares = parseUnits(shares, shareDecimals);
   const address = await signer.getAddress();
 
   const redeemTx = await vault.redeem(parsedShares, address, address);
