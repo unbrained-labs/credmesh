@@ -10,3 +10,5 @@ packages/outreach-agent/
 
 # Claude Code settings
 .claude/
+artifacts-hardhat/
+cache-hardhat/
