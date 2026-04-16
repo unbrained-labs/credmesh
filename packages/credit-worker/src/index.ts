@@ -192,25 +192,28 @@ app.get("/cover.svg", (c) => {
 app.get("/health", async (c) => {
   const chainEnabled = isChainEnabled(c.env);
   const escrowEnabled = isEscrowEnabled(c.env);
-  const escrowStats = escrowEnabled ? await getEscrowStats(c.env) : null;
-  const vaultStats = c.env.CREDIT_VAULT ? await getVaultStats(c.env) : null;
+  let escrowStats: Awaited<ReturnType<typeof getEscrowStats>> = null;
+  let vaultStats: Awaited<ReturnType<typeof getVaultStats>> = null;
+  try { escrowStats = escrowEnabled ? await getEscrowStats(c.env) : null; } catch {}
+  try { vaultStats = c.env.CREDIT_VAULT ? await getVaultStats(c.env) : null; } catch {}
+  const chains = getActiveChains(c.env);
   return c.json({
     status: "ok",
     agent: c.env.AGENT_NAME || "CredMesh",
-    version: "0.5.0",
+    version: "0.6.0",
     timestamp: Date.now(),
     chain: {
       enabled: chainEnabled,
-      network: chainEnabled ? "sepolia" : null,
+      network: chainEnabled ? `eip155:${c.env.CHAIN_ID ?? "unknown"}` : null,
       escrowEnabled,
       vaultEnabled: !!c.env.CREDIT_VAULT,
-      escrowBalance: escrowStats?.balance ? `${escrowStats.balance} tUSDC` : null,
+      escrowBalance: escrowStats?.balance ? `${escrowStats.balance} USDC` : null,
     },
     vault: vaultStats ? {
       ...vaultStats,
-      maxWithdrawable: vaultStats.idleBalance, // only idle capital is instantly redeemable
-      note: "totalAssets includes capital deployed in escrow. maxWithdrawable shows instantly redeemable amount.",
+      maxWithdrawable: vaultStats.idleBalance,
     } : null,
+    activeChains: chains,
   });
 });
 
