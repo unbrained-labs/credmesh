@@ -14,6 +14,7 @@ import { Terminal } from './components/Terminal';
 import { VaultPanel } from './components/VaultPanel';
 import { FeePanel } from './components/FeePanel';
 import { ChainStatus } from './components/ChainStatus';
+import { DepositFlow } from './components/DepositFlow';
 
 export default function App() {
   const [portfolio, setPortfolio] = useState<PortfolioReport | null>(null);
@@ -77,7 +78,7 @@ export default function App() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {risk && <RiskGauge risk={risk} />}
-          {treasury && portfolio && <WaterfallChart treasury={treasury} totalExposure={portfolio.summary.totalExposure} />}
+          <DepositFlow vault={health?.vault ?? null} />
           {health && <VaultPanel vault={health.vault} chain={health.chain} />}
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
