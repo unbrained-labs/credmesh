@@ -70,7 +70,7 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     // ─── Protocol Fee Split ───
 
     address public protocolTreasury;
-    uint256 public protocolFeeBps; // fraction of advance fee taken by protocol (e.g. 1500 = 15%)
+    uint256 public protocolFeeBps;
     uint256 public accruedProtocolFees;
 
     // ─── Timelocked Changes ───
@@ -176,18 +176,8 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
 
     // ─── Constructor ───
 
-    /// @param _token USDC address on this chain
-    /// @param _creditOracle Initial credit oracle (can be placeholder, changed via timelock)
-    /// @param _minCreditScore Minimum reputation score to borrow (10-100)
-    /// @param _feeBps Fee in basis points charged on each advance (max 2500 = 25%)
-    /// @param _hardCapPerAdvance Maximum single advance amount
-    /// @param _timelockDelay Seconds before governance changes take effect.
-    ///        Use short values (30) for testnet iteration, long values (172800)
-    ///        for mainnet. A value of 1 is allowed but functionally no timelock.
-    /// @param _maxExposurePerAgent Maximum outstanding principal per agent
-    /// @param _advanceDuration Time before an advance expires and becomes liquidatable (1h–365d)
-    /// @param _protocolTreasury Address receiving protocol fee share (can be zero initially)
-    /// @param _protocolFeeBps Fraction of each advance fee taken by protocol (e.g. 1500 = 15%)
+    /// @param _timelockDelay Short (30s) for testnet, long (172800s) for mainnet.
+    ///        A value of 1 is allowed but functionally no timelock.
     constructor(
         address _token,
         address _creditOracle,
@@ -248,24 +238,21 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         return 6;
     }
 
-    /// @notice Total assets under management = idle balance + capital out in advances.
-    /// Fees earned from settled advances are already in the balance, so share
-    /// price rises automatically. Liquidated principal is subtracted from
-    /// outstanding, so share price drops — LPs absorb losses pro-rata.
+    /// @dev Fees from settled advances are already in the balance (share price
+    /// rises automatically). Liquidated principal is subtracted from outstanding
+    /// (share price drops — LPs absorb losses pro-rata).
     function totalAssets() public view override returns (uint256) {
         return _idleBalance() + outstandingPrincipal();
     }
 
-    /// @notice Idle-only withdrawal. LPs can only redeem up to the contract's
-    /// current USDC balance. Capital deployed in active advances is not
-    /// withdrawable until it returns via settle or is written off via liquidate.
+    /// @dev Idle-only: capital deployed in active advances is not withdrawable
+    /// until it returns via settle or is written off via liquidate.
     function maxWithdraw(address owner) public view override returns (uint256) {
         uint256 ownerAssets = convertToAssets(balanceOf(owner));
         uint256 idle = _idleBalance();
         return ownerAssets < idle ? ownerAssets : idle;
     }
 
-    /// @notice Derives from maxWithdraw to stay consistent.
     function maxRedeem(address owner) public view override returns (uint256) {
         return convertToShares(maxWithdraw(owner));
     }
@@ -296,7 +283,6 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         return totalLPFeesEarned + totalProtocolFeesEarned;
     }
 
-    /// @notice Capital currently deployed in active (unsettled, unliquidated) advances.
     function outstandingPrincipal() public view returns (uint256) {
         return totalAdvanced - totalRepaid - totalLiquidated;
     }
@@ -319,7 +305,6 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     // Governance: 2-Step Transfer (with timeout + cancel)
     // ═══════════════════════════════════════════════════════════════
 
-    /// @notice Propose a new governance address. Must be accepted within 7 days.
     function proposeGovernance(address newGovernance) external onlyGovernance {
         require(newGovernance != address(0), "zero address");
         pendingGovernance = newGovernance;
@@ -327,7 +312,6 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         emit GovernanceProposed(newGovernance);
     }
 
-    /// @notice Accept governance transfer. Must be called by the proposed address.
     function acceptGovernance() external {
         require(msg.sender == pendingGovernance, "not pending");
         require(block.timestamp <= governanceProposedAt + GOVERNANCE_ACCEPT_WINDOW, "proposal expired");
@@ -368,7 +352,6 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         emit ChangeExecuted(id, oracle);
     }
 
-    /// @notice Propose removal of a trusted oracle (timelocked in V3).
     function proposeOracleRemove(address oracle) external onlyGovernance {
         require(oracle != address(0), "zero oracle");
         require(oracleAdvanceRatioBps[oracle] > 0, "oracle not registered");
@@ -377,7 +360,6 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         emit ChangeProposed(id, oracle, 0, block.timestamp + timelockDelay);
     }
 
-    /// @notice Execute oracle removal after timelock.
     function executeOracleRemove(address oracle) external onlyGovernance {
         bytes32 id = keccak256(abi.encode("removeOracle", oracle));
         PendingChange storage pc = pendingChanges[id];
@@ -436,7 +418,6 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         emit ChangeCancelled(changeId, target);
     }
 
-    /// @notice Recover tokens mistakenly sent to this contract (not the vault asset).
     function rescueToken(address token, address to, uint256 amount) external onlyGovernance {
         require(token != asset(), "cannot rescue vault asset");
         require(to != address(0), "zero recipient");
@@ -480,7 +461,6 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         pendingHardCapExecuteAfter = 0;
     }
 
-    /// @notice Propose new max exposure per agent (timelocked in V3).
     function proposeMaxExposure(uint256 _maxExposure) external onlyGovernance {
         require(_maxExposure > 0, "zero exposure");
         pendingMaxExposure = _maxExposure;
@@ -488,7 +468,6 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         emit MaxExposureProposed(_maxExposure, pendingMaxExposureExecuteAfter);
     }
 
-    /// @notice Execute max exposure change after timelock.
     function executeMaxExposure() external onlyGovernance {
         require(pendingMaxExposureExecuteAfter > 0, "not proposed");
         require(block.timestamp >= pendingMaxExposureExecuteAfter, "timelock active");
@@ -498,7 +477,6 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         pendingMaxExposureExecuteAfter = 0;
     }
 
-    /// @notice Propose new advance duration (timelocked in V3).
     function proposeAdvanceDuration(uint256 _duration) external onlyGovernance {
         require(_duration >= 1 hours, "duration too short");
         require(_duration <= 365 days, "duration too long");
@@ -507,7 +485,6 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         emit ChangeProposed(id, address(0), _duration, block.timestamp + timelockDelay);
     }
 
-    /// @notice Execute advance duration change after timelock.
     function executeAdvanceDuration(uint256 _duration) external onlyGovernance {
         bytes32 id = keccak256(abi.encode("advanceDuration", _duration));
         PendingChange storage pc = pendingChanges[id];
@@ -577,11 +554,6 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     // Public: Advance Lifecycle
     // ═══════════════════════════════════════════════════════════════
 
-    /// @notice Request a working-capital advance against a verified receivable.
-    /// @param oracle Address of the receivable oracle that verifies the collateral
-    /// @param receivableId Opaque ID of the receivable (job, bounty, etc.)
-    /// @param requestedAmount USDC amount to borrow
-    /// @return advanceId Unique identifier for this advance
     function requestAdvance(
         address oracle,
         bytes32 receivableId,
@@ -593,7 +565,9 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         require(requestedAmount <= hardCapPerAdvance, "exceeds hard cap");
 
         _validateReceivable(oracle, receivableId, requestedAmount, ratioBps);
-        _updateExposureAndCheckCredit(msg.sender, requestedAmount);
+
+        (uint256 score,, uint256 oracleMaxExposure) = creditOracle.getCredit(msg.sender);
+        _updateExposureAndCheckCredit(msg.sender, requestedAmount, score, oracleMaxExposure);
 
         require(_idleBalance() >= requestedAmount, "insufficient liquidity");
 
@@ -620,12 +594,8 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         emit AdvanceIssued(advanceId, msg.sender, oracle, receivableId, requestedAmount, fee);
     }
 
-    /// @notice Settle an advance by repaying principal + fee.
-    /// Any excess above principal+fee is held in `unclaimedRemainders` for the
-    /// agent to pull via `claimRemainder()` (pull-over-push: avoids revert if
-    /// the agent address is USDC-blacklisted).
-    /// @param advanceId The advance to settle
-    /// @param payoutAmount Total amount being paid (must be >= principal + fee)
+    /// @dev Excess above principal+fee goes to unclaimedRemainders —
+    /// pull-over-push to avoid revert if the agent is USDC-blacklisted.
     function settle(bytes32 advanceId, uint256 payoutAmount) external nonReentrant {
         Advance storage adv = advances[advanceId];
         require(adv.agent != address(0), "unknown advance");
@@ -658,7 +628,6 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         emit Settled(advanceId, adv.agent, adv.principal, adv.fee, remaining);
     }
 
-    /// @notice Claim accumulated settlement remainders (pull-over-push).
     function claimRemainder() external nonReentrant {
         uint256 amount = unclaimedRemainders[msg.sender];
         require(amount > 0, "nothing to claim");
@@ -667,8 +636,7 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         IERC20(asset()).safeTransfer(msg.sender, amount);
     }
 
-    /// @notice Liquidate an expired advance. Callable by anyone.
-    /// No tokens move — the principal is written off as a loss, reducing
+    /// @dev No tokens move — principal is written off as a loss, reducing
     /// share price pro-rata for all LPs.
     function liquidate(bytes32 advanceId) external nonReentrant {
         Advance storage adv = advances[advanceId];
@@ -684,7 +652,6 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         emit Liquidated(advanceId, adv.agent, msg.sender, adv.principal);
     }
 
-    /// @notice Clear a used receivable after the backing advance is resolved.
     function resetReceivable(bytes32 advanceId) external {
         Advance storage adv = advances[advanceId];
         require(adv.agent != address(0), "unknown advance");
@@ -710,11 +677,9 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         require(requestedAmount <= (amount * ratioBps) / 10000, "exceeds advance ratio");
     }
 
-    function _updateExposureAndCheckCredit(address agent, uint256 requestedAmount) internal {
+    function _updateExposureAndCheckCredit(address agent, uint256 requestedAmount, uint256 score, uint256 oracleMaxExposure) internal {
         exposure[agent] += requestedAmount;
         require(exposure[agent] <= maxExposurePerAgent, "exceeds max exposure per agent");
-
-        (uint256 score,, uint256 oracleMaxExposure) = creditOracle.getCredit(agent);
         require(score >= minCreditScore, "credit score too low");
         require(exposure[agent] <= oracleMaxExposure, "exposure limit exceeded");
     }

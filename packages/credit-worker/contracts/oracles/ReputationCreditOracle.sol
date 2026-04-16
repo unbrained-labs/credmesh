@@ -4,6 +4,10 @@ pragma solidity ^0.8.20;
 import "../interfaces/ICreditOracle.sol";
 import "../interfaces/IReputationRegistry.sol";
 
+interface IIdentityRegistry {
+    function getAgent(address agent) external view returns (bytes memory);
+}
+
 /**
  * @title ReputationCreditOracle
  * @notice Credit oracle that reads from an ERC-8004 ReputationRegistry.
@@ -18,8 +22,12 @@ contract ReputationCreditOracle is ICreditOracle {
     address public governance;
     address public pendingGovernance;
 
+    IIdentityRegistry public identityRegistry;
+    uint256 public identityBonusMultiplier;
+    uint256 public constant MAX_IDENTITY_BONUS = 10000;
+
     uint256 public constant MIN_MULTIPLIER = 1;
-    uint256 public constant MAX_MULTIPLIER = 100_000e6; // 100K USDC per score point max
+    uint256 public constant MAX_MULTIPLIER = 100_000e6;
 
     event ExposureMultiplierUpdated(uint256 oldValue, uint256 newValue);
     event GovernanceProposed(address indexed newGovernance);
@@ -63,6 +71,12 @@ contract ReputationCreditOracle is ICreditOracle {
         pendingGovernance = address(0);
     }
 
+    function setIdentityRegistry(address _registry, uint256 _bonusMultiplier) external onlyGovernance {
+        require(_bonusMultiplier <= MAX_IDENTITY_BONUS, "bonus too high");
+        identityRegistry = IIdentityRegistry(_registry);
+        identityBonusMultiplier = _bonusMultiplier;
+    }
+
     function getCredit(address agent) external view override returns (
         uint256 score,
         uint256 totalExposure,
@@ -72,6 +86,13 @@ contract ReputationCreditOracle is ICreditOracle {
         score = repScore > 100 ? 100 : repScore;
         totalExposure = ITrustlessEscrow(escrow).exposure(agent);
         maxExposure = score * exposureMultiplier;
+        if (address(identityRegistry) != address(0) && identityBonusMultiplier > 0) {
+            try identityRegistry.getAgent(agent) returns (bytes memory data) {
+                if (data.length > 0) {
+                    maxExposure += (maxExposure * identityBonusMultiplier) / 10000;
+                }
+            } catch {}
+        }
     }
 }
 
