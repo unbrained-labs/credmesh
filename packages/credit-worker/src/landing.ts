@@ -129,7 +129,7 @@ export function landingHTML(): string {
   <!-- Hero -->
   <div class="hero">
     <h1>Programmable <em>working capital</em> for autonomous agents</h1>
-    <p>Non-custodial credit infrastructure. Agents borrow against verified on-chain receivables. No operator approval — the contract verifies everything. Repayment via automatic waterfall.</p>
+    <p>Non-custodial credit infrastructure on Base. Agents borrow against verified on-chain receivables with credit scoring. LPs earn yield via ERC-4626 vault. No operator approval — the contract enforces everything.</p>
     <div class="hero-cta">
       <a href="https://github.com/unbrained-labs/credmesh/blob/main/SKILL.md" class="btn btn-primary">Agent? Start Here</a>
       <a href="/app#deposit" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;">Deposit &amp; Earn Yield</a>
@@ -170,7 +170,7 @@ export function landingHTML(): string {
       <div class="flow-step">
         <div class="num">06</div>
         <div class="title">Waterfall settles</div>
-        <div class="desc">Principal repaid first, then fees (85% to LPs, 15% protocol), then remainder to agent. Reputation updated on-chain.</div>
+        <div class="desc">Principal repaid first, then fees (100% to LP vault as share price increase), then remainder to agent. Reputation updated on-chain.</div>
       </div>
     </div>
   </section>
@@ -211,8 +211,8 @@ export function landingHTML(): string {
     <div class="section-label" style="color:#00e5ff;">For liquidity providers</div>
     <h2 style="font-size:32px;">Deposit USDC. Earn yield from agent credit fees.</h2>
     <p style="font-size:13px;color:#999;max-width:600px;margin:16px 0 32px;">
-      Agents borrow. They pay fees. 85% of those fees flow to you as vault share price appreciation.
-      ERC-4626 standard — connect wallet, deposit, done.
+      Agents borrow. They pay fees. 100% of those fees flow to LPs as vault share price appreciation.
+      ERC-4626 standard on Base Sepolia — connect wallet, deposit, done.
     </p>
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
       <a href="/app#deposit" class="btn btn-primary" style="border-color:#00e5ff;color:#00e5ff;font-size:13px;padding:14px 32px;">
@@ -230,7 +230,7 @@ export function landingHTML(): string {
       </div>
       <div class="stat">
         <div class="label">LP share</div>
-        <div class="value green">85%</div>
+        <div class="value green">100%</div>
         <div class="sub">Of all collected fees</div>
       </div>
       <div class="stat">
@@ -265,7 +265,7 @@ export function landingHTML(): string {
       </div>
       <div class="card">
         <h3>Governance → DAO</h3>
-        <p>Governance sets parameters and registers oracles (with 48h timelock). Transferable to multisig or DAO. Cannot withdraw capital or block advances.</p>
+        <p>Governance sets parameters and registers oracles (timelocked). Transferable to multisig or DAO. Cannot withdraw LP capital or block advances.</p>
       </div>
     </div>
   </section>
@@ -276,18 +276,18 @@ export function landingHTML(): string {
     <h2>Where agents work and capital lives</h2>
     <div class="integrations">
       <div class="integration">
-        <div class="name">Ethereum</div>
-        <div class="chain">Mainnet + Sepolia</div>
+        <div class="name">Base Sepolia</div>
+        <div class="chain">EscrowV3 + ERC-4626</div>
         <div class="status live">LIVE</div>
       </div>
       <div class="integration">
-        <div class="name">Base</div>
+        <div class="name">Base Mainnet</div>
         <div class="chain">Coinbase L2</div>
         <div class="status next">NEXT</div>
       </div>
       <div class="integration">
         <div class="name">HyperEVM</div>
-        <div class="chain">Hyperliquid</div>
+        <div class="chain">Reputation lending</div>
         <div class="status next">NEXT</div>
       </div>
       <div class="integration">
