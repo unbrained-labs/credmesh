@@ -45,14 +45,23 @@ const IDENTITY_ABI = parseAbi([
 // ── Clients ──
 
 function getClients(env: Env) {
-  if (!env.CHAIN_RPC_URL || !env.AGENT_PRIVATE_KEY) return null;
+  if (env.CHAIN_RPC_URL && env.AGENT_PRIVATE_KEY) {
+    const transport = http(env.CHAIN_RPC_URL);
+    const account = privateKeyToAccount(env.AGENT_PRIVATE_KEY as Hex);
+    return {
+      publicClient: createPublicClient({ chain: sepolia, transport }),
+      walletClient: createWalletClient({ chain: sepolia, transport, account }),
+      account,
+    };
+  }
 
-  const transport = http(env.CHAIN_RPC_URL);
-  const account = privateKeyToAccount(env.AGENT_PRIVATE_KEY as Hex);
-
+  const config = getChainConfig(env, "base-sepolia");
+  if (!config) return null;
+  const account = privateKeyToAccount(config.privateKey);
+  const transport = http(config.rpcUrl);
   return {
-    publicClient: createPublicClient({ chain: sepolia, transport }),
-    walletClient: createWalletClient({ chain: sepolia, transport, account }),
+    publicClient: createPublicClient({ chain: config.meta.viemChain, transport }),
+    walletClient: createWalletClient({ chain: config.meta.viemChain, transport, account }),
     account,
   };
 }
@@ -180,10 +189,11 @@ export async function transferTokens(
 
 export async function getTokenBalance(env: Env, address: string): Promise<string | null> {
   const clients = getClients(env);
-  if (!clients || !env.TEST_USDC) return null;
+  const token = env.TEST_USDC ?? env.BASE_SEPOLIA_USDC;
+  if (!clients || !token) return null;
 
   const balance = await clients.publicClient.readContract({
-    address: env.TEST_USDC as Address,
+    address: token as Address,
     abi: ERC20_ABI,
     functionName: "balanceOf",
     args: [address as Address],
@@ -278,32 +288,51 @@ const VAULT_ABI = parseAbi([
   "function recordDefault(uint256 lossAmount) external",
 ]);
 
+const V31_VAULT_ABI = parseAbi([
+  "function totalAssets() view returns (uint256)",
+  "function totalSupply() view returns (uint256)",
+  "function convertToAssets(uint256 shares) view returns (uint256)",
+  "function totalLPFeesEarned() view returns (uint256)",
+  "function totalLiquidated() view returns (uint256)",
+  "function outstandingPrincipal() view returns (uint256)",
+  "function availableLiquidity() view returns (uint256)",
+]);
+
+function getVaultAddress(env: Env): Address | null {
+  const addr = env.CREDIT_VAULT ?? env.BASE_SEPOLIA_ESCROW;
+  return addr ? (addr as Address) : null;
+}
+
 export async function getVaultStats(env: Env): Promise<{
   totalAssets: string;
   totalShares: string;
   sharePrice: string;
   idleBalance: string;
-  inAave: string;
   inEscrow: string;
   feesEarned: string;
   defaultLoss: string;
 } | null> {
   const clients = getClients(env);
-  if (!clients || !env.CREDIT_VAULT) return null;
+  const vault = getVaultAddress(env);
+  if (!clients || !vault) return null;
 
   try {
-    const [assets, shares, price, idle, aave, escrow, fees, loss] = await clients.publicClient.readContract({
-      address: env.CREDIT_VAULT as Address,
-      abi: VAULT_ABI,
-      functionName: "vaultStats",
-    });
+    const oneShare = BigInt(1e12);
+    const [assets, shares, priceRaw, fees, loss, outstanding, idle] = await Promise.all([
+      clients.publicClient.readContract({ address: vault, abi: V31_VAULT_ABI, functionName: "totalAssets" }),
+      clients.publicClient.readContract({ address: vault, abi: V31_VAULT_ABI, functionName: "totalSupply" }),
+      clients.publicClient.readContract({ address: vault, abi: V31_VAULT_ABI, functionName: "convertToAssets", args: [oneShare] }),
+      clients.publicClient.readContract({ address: vault, abi: V31_VAULT_ABI, functionName: "totalLPFeesEarned" }),
+      clients.publicClient.readContract({ address: vault, abi: V31_VAULT_ABI, functionName: "totalLiquidated" }),
+      clients.publicClient.readContract({ address: vault, abi: V31_VAULT_ABI, functionName: "outstandingPrincipal" }),
+      clients.publicClient.readContract({ address: vault, abi: V31_VAULT_ABI, functionName: "availableLiquidity" }),
+    ]);
     return {
       totalAssets: formatUnits(assets, 6),
-      totalShares: formatUnits(shares, 6),
-      sharePrice: (Number(price) / 1e6).toFixed(6),
+      totalShares: formatUnits(shares, 12),
+      sharePrice: formatUnits(priceRaw, 6),
       idleBalance: formatUnits(idle, 6),
-      inAave: formatUnits(aave, 6),
-      inEscrow: formatUnits(escrow, 6),
+      inEscrow: formatUnits(outstanding, 6),
       feesEarned: formatUnits(fees, 6),
       defaultLoss: formatUnits(loss, 6),
     };
@@ -429,7 +458,8 @@ export async function getVaultPosition(env: Env, address: string): Promise<{
   sharePrice: string;
 } | null> {
   const clients = getClients(env);
-  if (!clients || !env.CREDIT_VAULT) return null;
+  const vault = getVaultAddress(env);
+  if (!clients || !vault) return null;
 
   try {
     const vaultAbi = parseAbi([
@@ -440,7 +470,7 @@ export async function getVaultPosition(env: Env, address: string): Promise<{
     ]);
 
     const shares = await clients.publicClient.readContract({
-      address: env.CREDIT_VAULT as Address,
+      address: vault,
       abi: vaultAbi,
       functionName: "balanceOf",
       args: [address as Address],
@@ -456,25 +486,27 @@ export async function getVaultPosition(env: Env, address: string): Promise<{
       : 0n;
 
     const totalSupply = await clients.publicClient.readContract({
-      address: env.CREDIT_VAULT as Address,
+      address: vault,
       abi: vaultAbi,
       functionName: "totalSupply",
     });
 
     const totalAssets = await clients.publicClient.readContract({
-      address: env.CREDIT_VAULT as Address,
+      address: vault,
       abi: vaultAbi,
       functionName: "totalAssets",
     });
 
-    const sharePrice = totalSupply > 0n
-      ? (Number(totalAssets) / Number(totalSupply)).toFixed(6)
-      : "1.000000";
+    // V3.1: shares have 12 decimals (6 USDC + 6 offset), assets have 6
+    const oneShare = BigInt(1e12);
+    const priceRaw = totalSupply > 0n
+      ? await clients.publicClient.readContract({ address: vault, abi: vaultAbi, functionName: "convertToAssets", args: [oneShare] })
+      : BigInt(1e6);
 
     return {
-      shares: formatUnits(shares, 6),
+      shares: formatUnits(shares, 12),
       value: formatUnits(value, 6),
-      sharePrice,
+      sharePrice: formatUnits(priceRaw, 6),
     };
   } catch (e) {
     console.error("Vault position read failed:", e);
@@ -507,16 +539,21 @@ export async function mintTestTokens(
 // ── Status ──
 
 export function isChainEnabled(env: Env): boolean {
-  return !!(env.CHAIN_RPC_URL && env.AGENT_PRIVATE_KEY && env.TEST_USDC);
+  if (env.CHAIN_RPC_URL && env.AGENT_PRIVATE_KEY && env.TEST_USDC) return true;
+  const config = getChainConfig(env, "base-sepolia");
+  return !!config;
 }
 
 export function isEscrowEnabled(env: Env): boolean {
-  return isChainEnabled(env) && !!env.CREDIT_ESCROW;
+  if (isChainEnabled(env) && env.CREDIT_ESCROW) return true;
+  const config = getChainConfig(env, "base-sepolia");
+  return !!(config?.escrow);
 }
 
 export function getAgentWallet(env: Env): string | null {
-  if (!env.AGENT_PRIVATE_KEY) return null;
-  return privateKeyToAccount(env.AGENT_PRIVATE_KEY as Hex).address;
+  const key = env.AGENT_PRIVATE_KEY ?? env.BASE_SEPOLIA_PRIVATE_KEY;
+  if (!key) return null;
+  return privateKeyToAccount(key as Hex).address;
 }
 
 // ═══════════════════════════════════════════════════════════════

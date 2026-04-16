@@ -195,7 +195,7 @@ app.get("/health", async (c) => {
   let escrowStats: Awaited<ReturnType<typeof getEscrowStats>> = null;
   let vaultStats: Awaited<ReturnType<typeof getVaultStats>> = null;
   try { escrowStats = escrowEnabled ? await getEscrowStats(c.env) : null; } catch {}
-  try { vaultStats = c.env.CREDIT_VAULT ? await getVaultStats(c.env) : null; } catch {}
+  try { vaultStats = await getVaultStats(c.env); } catch {}
   const chains = getActiveChains(c.env);
   return c.json({
     status: "ok",
@@ -204,9 +204,8 @@ app.get("/health", async (c) => {
     timestamp: Date.now(),
     chain: {
       enabled: chainEnabled,
-      network: chainEnabled ? `eip155:${c.env.CHAIN_ID ?? "unknown"}` : null,
+      network: chainEnabled ? "eip155:84532" : null,
       escrowEnabled,
-      vaultEnabled: !!c.env.CREDIT_VAULT,
       escrowBalance: escrowStats?.balance ? `${escrowStats.balance} USDC` : null,
     },
     vault: vaultStats ? {
@@ -220,7 +219,7 @@ app.get("/health", async (c) => {
 // ─── Vault (LP agents) ───
 
 app.get("/vault/opportunity", async (c) => {
-  const vaultStats = c.env.CREDIT_VAULT ? await getVaultStats(c.env) : null;
+  const vaultStats = await getVaultStats(c.env);
   const agent = getAgent(c.env);
   const treasury = await agent.getTreasury() as TreasuryState;
   const portfolio = await agent.getPortfolio() as PortfolioReport;
@@ -241,8 +240,8 @@ app.get("/vault/opportunity", async (c) => {
   const data = {
     type: "yield-opportunity",
     protocol: "CredMesh",
-    asset: "tUSDC",
-    network: "eip155:11155111",
+    asset: "USDC",
+    network: "eip155:84532",
     vault: {
       standard: "ERC-4626",
       shareToken: "cmCREDIT",
@@ -282,8 +281,8 @@ app.get("/vault/opportunity", async (c) => {
     },
     howToDeposit: {
       description: "Approve tUSDC to the vault contract, then call deposit(). Standard ERC-4626 flow.",
-      tokenContract: c.env.TEST_USDC ?? "not configured",
-      vaultContract: c.env.CREDIT_VAULT ?? "not configured",
+      tokenContract: c.env.BASE_SEPOLIA_USDC ?? c.env.TEST_USDC ?? "not configured",
+      vaultContract: c.env.BASE_SEPOLIA_ESCROW ?? c.env.CREDIT_VAULT ?? "not configured",
       steps: [
         { action: "approve", target: "token", method: "approve(vaultAddress, amount)", description: "Allow vault to pull your tUSDC" },
         { action: "deposit", target: "vault", method: "deposit(amount, yourAddress)", description: "Deposit tUSDC, receive cmCREDIT shares" },
@@ -314,7 +313,7 @@ app.get("/vault/position/:address", async (c) => {
   const [position, tokenBalance, vaultStats] = await Promise.all([
     getVaultPosition(c.env, address),
     getTokenBalance(c.env, address),
-    c.env.CREDIT_VAULT ? getVaultStats(c.env) : null,
+    getVaultStats(c.env),
   ]);
 
   const shares = position ? parseFloat(position.shares) : 0;
@@ -341,7 +340,7 @@ app.get("/vault/position/:address", async (c) => {
       feesEarned: vaultStats?.feesEarned ?? "0",
       defaultLoss: vaultStats?.defaultLoss ?? "0",
     },
-    explorer: `https://sepolia.etherscan.io/address/${address}`,
+    explorer: `https://sepolia.basescan.org/address/${address}`,
   });
 });
 
@@ -1173,7 +1172,7 @@ app.get("/onchain/:address", async (c) => {
     identity,
     reputation,
     tokenBalance: balance ? `${balance} tUSDC` : null,
-    explorer: `https://sepolia.etherscan.io/address/${address}`,
+    explorer: `https://sepolia.basescan.org/address/${address}`,
   });
 });
 
