@@ -19,8 +19,12 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.13",
+    "@nomicfoundation/hardhat-network-helpers": "^3.0.4",
+    "@nomicfoundation/hardhat-toolbox": "^7.0.0",
     "@openzeppelin/contracts": "^5.1.0",
     "better-sqlite3": "^12.8.0",
+    "chai": "^6.2.2",
+    "forge-std": "github:foundry-rs/forge-std",
     "hardhat": "^3.3.0",
     "mppx": "^0.4.8",
     "viem": "^2.47.6"
