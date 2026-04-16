@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -117,6 +117,11 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     uint256 public totalLiquidated;
     uint256 private _advanceNonce;
 
+    // ─── Unclaimed Remainders (pull-over-push for blacklist safety) ───
+
+    mapping(address => uint256) public unclaimedRemainders;
+    uint256 public totalUnclaimedRemainders;
+
     // ─── Events ───
 
     event AdvanceIssued(
@@ -162,7 +167,9 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     /// @param _minCreditScore Minimum reputation score to borrow (10-100)
     /// @param _feeBps Fee in basis points charged on each advance (max 2500 = 25%)
     /// @param _hardCapPerAdvance Maximum single advance amount
-    /// @param _timelockDelay Seconds before governance changes take effect
+    /// @param _timelockDelay Seconds before governance changes take effect.
+    ///        Use short values (300) for testnet iteration, long values (172800)
+    ///        for mainnet. A value of 1 is allowed but functionally no timelock.
     /// @param _maxExposurePerAgent Maximum outstanding principal per agent
     constructor(
         address _token,
@@ -211,7 +218,7 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     /// price rises automatically. Liquidated principal is subtracted from
     /// outstanding, so share price drops — LPs absorb losses pro-rata.
     function totalAssets() public view override returns (uint256) {
-        return IERC20(asset()).balanceOf(address(this)) + outstandingPrincipal();
+        return IERC20(asset()).balanceOf(address(this)) - totalUnclaimedRemainders + outstandingPrincipal();
     }
 
     /// @notice Idle-only withdrawal. LPs can only redeem up to the contract's
@@ -219,13 +226,31 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     /// withdrawable until it returns via settle or is written off via liquidate.
     function maxWithdraw(address owner) public view override returns (uint256) {
         uint256 ownerAssets = convertToAssets(balanceOf(owner));
-        uint256 idle = IERC20(asset()).balanceOf(address(this));
+        uint256 idle = IERC20(asset()).balanceOf(address(this)) - totalUnclaimedRemainders;
         return ownerAssets < idle ? ownerAssets : idle;
     }
 
     /// @notice Derives from maxWithdraw to stay consistent.
     function maxRedeem(address owner) public view override returns (uint256) {
         return convertToShares(maxWithdraw(owner));
+    }
+
+    /// @dev [H-01] Defense-in-depth: nonReentrant on all ERC-4626 entry points.
+    /// USDC has no hooks, but the constructor accepts any ERC20 address.
+    function deposit(uint256 assets, address receiver) public override nonReentrant returns (uint256) {
+        return super.deposit(assets, receiver);
+    }
+
+    function mint(uint256 shares, address receiver) public override nonReentrant returns (uint256) {
+        return super.mint(shares, receiver);
+    }
+
+    function withdraw(uint256 assets, address receiver, address owner) public override nonReentrant returns (uint256) {
+        return super.withdraw(assets, receiver, owner);
+    }
+
+    function redeem(uint256 shares, address receiver, address owner) public override nonReentrant returns (uint256) {
+        return super.redeem(shares, receiver, owner);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -245,9 +270,9 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         return (outstandingPrincipal() * 10000) / total;
     }
 
-    /// @notice Idle USDC available for new advances.
+    /// @notice Idle USDC available for new advances (excludes unclaimed remainders).
     function availableLiquidity() external view returns (uint256) {
-        return IERC20(asset()).balanceOf(address(this));
+        return IERC20(asset()).balanceOf(address(this)) - totalUnclaimedRemainders;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -273,6 +298,7 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     }
 
     function cancelGovernanceProposal() external onlyGovernance {
+        require(pendingGovernance != address(0), "no pending proposal");
         emit GovernanceCancelled(pendingGovernance);
         pendingGovernance = address(0);
         governanceProposedAt = 0;
@@ -368,6 +394,13 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         address target = pendingChanges[changeId].target;
         delete pendingChanges[changeId];
         emit ChangeCancelled(changeId, target);
+    }
+
+    /// @notice Recover tokens mistakenly sent to this contract (not the vault asset).
+    function rescueToken(address token, address to, uint256 amount) external onlyGovernance {
+        require(token != asset(), "cannot rescue vault asset");
+        require(to != address(0), "zero recipient");
+        IERC20(token).safeTransfer(to, amount);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -466,10 +499,10 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         require(requestedAmount <= hardCapPerAdvance, "exceeds hard cap");
 
         _validateReceivable(oracle, receivableId, requestedAmount, ratioBps);
-        _checkCredit(msg.sender, requestedAmount);
+        _updateExposureAndCheckCredit(msg.sender, requestedAmount);
 
         require(
-            IERC20(asset()).balanceOf(address(this)) >= requestedAmount,
+            IERC20(asset()).balanceOf(address(this)) - totalUnclaimedRemainders >= requestedAmount,
             "insufficient liquidity"
         );
 
@@ -497,6 +530,9 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
     }
 
     /// @notice Settle an advance by repaying principal + fee.
+    /// Any excess above principal+fee is held in `unclaimedRemainders` for the
+    /// agent to pull via `claimRemainder()` (pull-over-push: avoids revert if
+    /// the agent address is USDC-blacklisted).
     /// @param advanceId The advance to settle
     /// @param payoutAmount Total amount being paid (must be >= principal + fee)
     function settle(bytes32 advanceId, uint256 payoutAmount) external nonReentrant {
@@ -516,13 +552,23 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         totalFeesEarned += adv.fee;
 
         if (remaining > 0) {
-            IERC20(asset()).safeTransfer(adv.agent, remaining);
+            unclaimedRemainders[adv.agent] += remaining;
+            totalUnclaimedRemainders += remaining;
         }
 
         exposure[adv.agent] -= adv.principal;
         adv.settled = true;
 
         emit Settled(advanceId, adv.agent, adv.principal, adv.fee, remaining);
+    }
+
+    /// @notice Claim accumulated settlement remainders (pull-over-push).
+    function claimRemainder() external nonReentrant {
+        uint256 amount = unclaimedRemainders[msg.sender];
+        require(amount > 0, "nothing to claim");
+        unclaimedRemainders[msg.sender] = 0;
+        totalUnclaimedRemainders -= amount;
+        IERC20(asset()).safeTransfer(msg.sender, amount);
     }
 
     /// @notice Liquidate an expired advance. Callable by anyone.
@@ -568,7 +614,7 @@ contract TrustlessEscrowV3 is ERC4626, ReentrancyGuard {
         require(requestedAmount <= (amount * ratioBps) / 10000, "exceeds advance ratio");
     }
 
-    function _checkCredit(address agent, uint256 requestedAmount) internal {
+    function _updateExposureAndCheckCredit(address agent, uint256 requestedAmount) internal {
         exposure[agent] += requestedAmount;
         require(exposure[agent] <= maxExposurePerAgent, "exceeds max exposure per agent");
 
