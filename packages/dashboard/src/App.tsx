@@ -78,6 +78,7 @@ export default function App() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {risk && <RiskGauge risk={risk} />}
+          {treasury && portfolio && <WaterfallChart treasury={treasury} totalExposure={portfolio.summary.totalExposure} />}
           <DepositFlow vault={health?.vault ?? null} />
           {health && <VaultPanel vault={health.vault} chain={health.chain} />}
         </div>
