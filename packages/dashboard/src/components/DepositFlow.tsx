@@ -29,20 +29,19 @@ export function DepositFlow({ vault }: { vault: HealthResponse['vault'] | null }
     try {
       const state = await connectWallet();
       setWallet(state);
-      if (state.chainId !== 11155111) {
-        setStatus({ type: 'err', text: 'Wrong network. Switching to Sepolia...' });
-        // Auto-request network switch
+      if (state.chainId !== 84532) {
+        setStatus({ type: 'err', text: 'Wrong network. Switching to Base Sepolia...' });
         try {
           const ethereum = (window as unknown as Record<string, unknown>).ethereum as { request: (args: Record<string, unknown>) => Promise<unknown> };
           await ethereum.request({
             method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0xaa36a7' }], // Sepolia
+            params: [{ chainId: '0x14a34' }], // Base Sepolia
           });
           const updated = await connectWallet();
           setWallet(updated);
           setStatus(null);
         } catch {
-          setStatus({ type: 'err', text: 'Please switch to Sepolia (chain ID 11155111) in your wallet.' });
+          setStatus({ type: 'err', text: 'Please switch to Base Sepolia (chain ID 84532) in your wallet.' });
         }
       }
     } catch (e) {

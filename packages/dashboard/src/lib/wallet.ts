@@ -1,8 +1,9 @@
 import { BrowserProvider, Contract, parseUnits, type Signer } from 'ethers';
 import { API_BASE } from './config';
 
-// Contract addresses (Sepolia)
-const TOKEN_ADDRESS = '0x60f6420c4575bd2777bbd031c2b5b960dfbfc5d8'; // TestUSDC
+// Base Sepolia
+const BASE_SEPOLIA_CHAIN_ID = 84532;
+const TOKEN_ADDRESS = '0x036CbD53842c5426634e7929541eC2318f3dCF7e'; // Circle USDC on Base Sepolia
 
 const ERC20_ABI = [
   'function balanceOf(address) view returns (uint256)',
@@ -62,8 +63,8 @@ export async function connectWallet(): Promise<WalletState> {
   const network = await provider.getNetwork();
   const chainId = Number(network.chainId);
 
-  // Must be on Sepolia
-  if (chainId !== 11155111) {
+  // Must be on Base Sepolia
+  if (chainId !== BASE_SEPOLIA_CHAIN_ID) {
     return {
       connected: true,
       address,
