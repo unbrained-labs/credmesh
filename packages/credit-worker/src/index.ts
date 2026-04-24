@@ -6,7 +6,7 @@ import { agentCard } from "./agent-card";
 import type { CreditAgent } from "./engine";
 import { listScenarios } from "./demo";
 import { checkIdentityRegistration } from "./erc8004";
-import { isChainEnabled, isEscrowEnabled, getEscrowStats, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens, getVaultPosition, verifyPayment, isTrustlessEnabled, getTrustlessConfig, getTrustlessParams, getOnchainCredit, buildAdvanceCalldata, verifyTrustlessAdvance, registerReceivable } from "./chain";
+import { isChainEnabled, isEscrowEnabled, getVaultStats, getReputation, checkIdentityOnchain, getTokenBalance, mintTestTokens, getVaultPosition, verifyPayment, isTrustlessEnabled, getTrustlessConfig, getTrustlessParams, getOnchainCredit, buildAdvanceCalldata, verifyTrustlessAdvance, registerReceivable } from "./chain";
 import { authMiddleware, assertAuthorized, AuthorizationError } from "./auth";
 import { computeFee, PROTOCOL_FEE_BPS } from "./pricing";
 import { positiveNumber, boundedString, ethAddress } from "./validate";
@@ -189,30 +189,49 @@ app.get("/cover.svg", (c) => {
   return c.body(COVER_SVG);
 });
 
+// Short TTL cache so a monitor hammering /health can't fan out 7 RPCs per hit.
+const HEALTH_CACHE_TTL_MS = 10_000;
+let healthCache: {
+  fetchedAt: number;
+  vaultStats: Awaited<ReturnType<typeof getVaultStats>>;
+  warnings: string[];
+} | null = null;
+
 app.get("/health", async (c) => {
   const chainEnabled = isChainEnabled(c.env);
   const escrowEnabled = isEscrowEnabled(c.env);
-  let escrowStats: Awaited<ReturnType<typeof getEscrowStats>> = null;
-  let vaultStats: Awaited<ReturnType<typeof getVaultStats>> = null;
-  try { escrowStats = escrowEnabled ? await getEscrowStats(c.env) : null; } catch {}
-  try { vaultStats = await getVaultStats(c.env); } catch {}
-  const chains = getActiveChains(c.env);
+  const now = Date.now();
+
+  if (!healthCache || now - healthCache.fetchedAt > HEALTH_CACHE_TTL_MS) {
+    const warnings: string[] = [];
+    let vaultStats: Awaited<ReturnType<typeof getVaultStats>> = null;
+    try {
+      vaultStats = await getVaultStats(c.env);
+      if (chainEnabled && !vaultStats) warnings.push("vault stats unavailable: address or RPC not configured");
+    } catch (e) {
+      warnings.push(`vault stats failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    healthCache = { fetchedAt: now, vaultStats, warnings };
+  }
+
+  const { vaultStats, warnings } = healthCache;
   return c.json({
     status: "ok",
     agent: c.env.AGENT_NAME || "CredMesh",
     version: "0.6.0",
-    timestamp: Date.now(),
+    timestamp: now,
     chain: {
       enabled: chainEnabled,
       network: chainEnabled ? "eip155:84532" : null,
       escrowEnabled,
-      escrowBalance: escrowStats?.balance ? `${escrowStats.balance} USDC` : null,
+      escrowBalance: vaultStats ? `${vaultStats.idleBalance} USDC` : null,
     },
     vault: vaultStats ? {
       ...vaultStats,
       maxWithdrawable: vaultStats.idleBalance,
     } : null,
-    activeChains: chains,
+    activeChains: getActiveChains(c.env),
+    warnings: warnings.length > 0 ? warnings : undefined,
   });
 });
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.24;
 
 import "../interfaces/ICreditOracle.sol";
 import "../interfaces/IReputationRegistry.sol";
@@ -8,13 +8,10 @@ interface IIdentityRegistry {
     function getAgent(address agent) external view returns (bytes memory);
 }
 
-/**
- * @title ReputationCreditOracle
- * @notice Credit oracle that reads from an ERC-8004 ReputationRegistry.
- *
- * Score = min(reputation_score, 100)
- * maxExposure = score * exposureMultiplier
- */
+/// @title ReputationCreditOracle
+/// @notice Credit oracle gating advances on ERC-8004 reputation score plus
+///         identity-registered bonus. No collateral. Score capped at 100.
+///         maxExposure = score * exposureMultiplier * (1 + identityBonusBps/10000) if registered.
 contract ReputationCreditOracle is ICreditOracle {
     IReputationRegistry public immutable reputationRegistry;
     address public immutable escrow;
@@ -30,6 +27,7 @@ contract ReputationCreditOracle is ICreditOracle {
     uint256 public constant MAX_MULTIPLIER = 100_000e6;
 
     event ExposureMultiplierUpdated(uint256 oldValue, uint256 newValue);
+    event IdentityRegistryUpdated(address indexed oldRegistry, address indexed newRegistry, uint256 bonusBps);
     event GovernanceProposed(address indexed newGovernance);
     event GovernanceTransferred(address indexed oldGovernance, address indexed newGovernance);
 
@@ -41,15 +39,21 @@ contract ReputationCreditOracle is ICreditOracle {
     constructor(
         address _reputationRegistry,
         address _escrow,
-        uint256 _exposureMultiplier
+        uint256 _exposureMultiplier,
+        address _identityRegistry,
+        uint256 _identityBonusMultiplier
     ) {
         require(_reputationRegistry != address(0), "zero registry");
         require(_escrow != address(0), "zero escrow");
         require(_exposureMultiplier >= MIN_MULTIPLIER && _exposureMultiplier <= MAX_MULTIPLIER, "multiplier out of range");
+        require(_identityBonusMultiplier <= MAX_IDENTITY_BONUS, "bonus too high");
         reputationRegistry = IReputationRegistry(_reputationRegistry);
         escrow = _escrow;
         exposureMultiplier = _exposureMultiplier;
+        identityRegistry = IIdentityRegistry(_identityRegistry);
+        identityBonusMultiplier = _identityBonusMultiplier;
         governance = msg.sender;
+        emit IdentityRegistryUpdated(address(0), _identityRegistry, _identityBonusMultiplier);
     }
 
     function setExposureMultiplier(uint256 _multiplier) external onlyGovernance {
@@ -73,8 +77,10 @@ contract ReputationCreditOracle is ICreditOracle {
 
     function setIdentityRegistry(address _registry, uint256 _bonusMultiplier) external onlyGovernance {
         require(_bonusMultiplier <= MAX_IDENTITY_BONUS, "bonus too high");
+        address old = address(identityRegistry);
         identityRegistry = IIdentityRegistry(_registry);
         identityBonusMultiplier = _bonusMultiplier;
+        emit IdentityRegistryUpdated(old, _registry, _bonusMultiplier);
     }
 
     function getCredit(address agent) external view override returns (

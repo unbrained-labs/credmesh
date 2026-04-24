@@ -30,7 +30,6 @@ const ESCROW_ABI = parseAbi([
   "function returnToVault(address vault, uint256 amount) external",
   "function availableFunds() external view returns (uint256)",
   "function getAdvance(bytes32 advanceId) external view returns (address agent, uint256 principal, uint256 fee, bool settled)",
-  "function stats() external view returns (uint256, uint256, uint256, uint256, uint256, uint256)",
 ]);
 
 const REPUTATION_ABI = parseAbi([
@@ -39,7 +38,7 @@ const REPUTATION_ABI = parseAbi([
 ]);
 
 const IDENTITY_ABI = parseAbi([
-  "function getAgent(address agent) external view returns (string name, string description, bool registered)",
+  "function agentInfo(address agent) external view returns (string agentCardUri, bytes32 agentCardHash, uint64 registeredAt, uint64 updatedAt)",
 ]);
 
 // ── Clients ──
@@ -136,34 +135,6 @@ export async function escrowSettle(
   return { txHash: hash };
 }
 
-/** Get escrow stats */
-export async function getEscrowStats(env: Env): Promise<{
-  totalDeposited: string;
-  totalAdvanced: string;
-  totalRepaid: string;
-  totalFeesEarned: string;
-  totalDefaultLoss: string;
-  balance: string;
-} | null> {
-  const clients = getClients(env);
-  if (!clients || !env.CREDIT_ESCROW) return null;
-
-  const [deposited, advanced, repaid, fees, loss, balance] = await clients.publicClient.readContract({
-    address: env.CREDIT_ESCROW as Address,
-    abi: ESCROW_ABI,
-    functionName: "stats",
-  });
-
-  return {
-    totalDeposited: formatUnits(deposited, 6),
-    totalAdvanced: formatUnits(advanced, 6),
-    totalRepaid: formatUnits(repaid, 6),
-    totalFeesEarned: formatUnits(fees, 6),
-    totalDefaultLoss: formatUnits(loss, 6),
-    balance: formatUnits(balance, 6),
-  };
-}
-
 // ── Legacy direct transfer (fallback when no escrow) ──
 
 export async function transferTokens(
@@ -202,12 +173,8 @@ export async function getTokenBalance(env: Env, address: string): Promise<string
 }
 
 export async function getTreasuryBalance(env: Env): Promise<string | null> {
-  // If escrow exists, read escrow balance
-  if (env.CREDIT_ESCROW) {
-    const stats = await getEscrowStats(env);
-    return stats?.balance ?? null;
-  }
-  // Fallback: read wallet balance
+  const vault = await getVaultStats(env);
+  if (vault) return vault.idleBalance;
   const clients = getClients(env);
   if (!clients || !env.TEST_USDC) return null;
   return getTokenBalance(env, clients.account.address);
@@ -260,18 +227,33 @@ export async function getReputation(
 export async function checkIdentityOnchain(
   env: Env,
   agentAddress: string,
-): Promise<{ name: string; description: string; registered: boolean } | null> {
+): Promise<{
+  registered: boolean;
+  agentCardUri: string;
+  agentCardHash: Hex;
+  registeredAt: number;
+  updatedAt: number;
+} | null> {
   const clients = getClients(env);
-  if (!clients || !env.IDENTITY_REGISTRY) return null;
+  const config = getChainConfig(env, "base-sepolia");
+  const registryAddress = (config?.identity ?? env.IDENTITY_REGISTRY) as Address | undefined;
+  if (!clients || !registryAddress) return null;
 
   try {
-    const [name, description, registered] = await clients.publicClient.readContract({
-      address: env.IDENTITY_REGISTRY as Address,
-      abi: IDENTITY_ABI,
-      functionName: "getAgent",
-      args: [agentAddress as Address],
-    });
-    return { name, description, registered };
+    const [agentCardUri, agentCardHash, registeredAt, updatedAt] =
+      await clients.publicClient.readContract({
+        address: registryAddress,
+        abi: IDENTITY_ABI,
+        functionName: "agentInfo",
+        args: [agentAddress as Address],
+      });
+    return {
+      registered: registeredAt > 0n,
+      agentCardUri,
+      agentCardHash,
+      registeredAt: Number(registeredAt),
+      updatedAt: Number(updatedAt),
+    };
   } catch {
     return null;
   }
