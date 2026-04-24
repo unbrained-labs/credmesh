@@ -44,6 +44,17 @@ const IDENTITY_ABI = parseAbi([
 // ── Clients ──
 
 function getClients(env: Env) {
+  const config = getChainConfig(env, "base-sepolia");
+  if (config) {
+    const account = privateKeyToAccount(config.privateKey);
+    const transport = http(config.rpcUrl);
+    return {
+      publicClient: createPublicClient({ chain: config.meta.viemChain, transport }),
+      walletClient: createWalletClient({ chain: config.meta.viemChain, transport, account }),
+      account,
+    };
+  }
+
   if (env.CHAIN_RPC_URL && env.AGENT_PRIVATE_KEY) {
     const transport = http(env.CHAIN_RPC_URL);
     const account = privateKeyToAccount(env.AGENT_PRIVATE_KEY as Hex);
@@ -54,15 +65,7 @@ function getClients(env: Env) {
     };
   }
 
-  const config = getChainConfig(env, "base-sepolia");
-  if (!config) return null;
-  const account = privateKeyToAccount(config.privateKey);
-  const transport = http(config.rpcUrl);
-  return {
-    publicClient: createPublicClient({ chain: config.meta.viemChain, transport }),
-    walletClient: createWalletClient({ chain: config.meta.viemChain, transport, account }),
-    account,
-  };
+  return null;
 }
 
 // ── Escrow Operations ──
