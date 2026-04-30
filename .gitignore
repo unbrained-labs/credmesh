@@ -12,3 +12,6 @@ packages/outreach-agent/
 .claude/
 artifacts-hardhat/
 cache-hardhat/
+
+# Local SQLite test data
+data-test/
